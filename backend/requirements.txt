@@ -18,3 +18,4 @@ Pillow>=10.3.0
 # Tests
 pytest>=8.0.0
 httpx>=0.27.0
+anyio[trio]>=4.0.0

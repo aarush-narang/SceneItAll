@@ -1,11 +1,9 @@
-from __future__ import annotations
-
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
+from app.main import app
 
 
 EXISTING_USER_ID = "e327bd69-ef6a-4a2f-8f04-10186d3e8f4e"
