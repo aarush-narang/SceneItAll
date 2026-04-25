@@ -53,6 +53,16 @@ async def get_design(id: str):
     return DesignPublic.from_doc(doc)
 
 
+@router.get("/{id}/objects", response_model=list[PlacedObject])
+async def list_design_objects(id: str):
+    doc = await designs_col().find_one(
+        {"_id": id, "deleted_at": None}, {"objects": 1}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Design {id} not found")
+    return [PlacedObject.model_validate(o) for o in doc.get("objects") or []]
+
+
 @router.patch("/{id}", response_model=DesignPublic)
 async def patch_design(id: str, body: DesignPatchRequest):
     col = designs_col()
