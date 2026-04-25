@@ -9,13 +9,17 @@ import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-//        VStack {
-//            Image(systemName: "globe")
-//                .imageScale(.large)
-//                .foregroundStyle(.tint)
-//            Text("Hello, world!")
-//        }
-//        .padding()
-        OnboardingView()
+
+//        OnboardingView()
+        Button(action: {
+            do {
+                let sanitizedJSON = try loadSanitizedRoomPayload(fromJSONFilePath: "/Users/kelvinjou/Documents/GitHub/LAHacks2026/FurnitureRoomPlacement/FurnitureRoomPlacement/JSON_testfiles/southwest_corner.json")
+                print(sanitizedJSON)
+            } catch {
+                print(error.localizedDescription)
+            }
+        }) {
+            Text("Sanitize")
+        }
     }
 }
