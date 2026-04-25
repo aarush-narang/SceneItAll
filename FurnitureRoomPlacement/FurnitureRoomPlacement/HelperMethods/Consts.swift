@@ -32,7 +32,8 @@ struct Furniture: Codable, Identifiable {
     let files: Files
 
     enum CodingKeys: String, CodingKey {
-        case id = "_id"
+        case id
+        case legacyID = "_id"
         case name
         case familyKey = "family_key"
         case source
@@ -47,6 +48,84 @@ struct Furniture: Codable, Identifiable {
         case description
         case embeddingText = "embedding_text"
         case files
+    }
+
+    init(
+        id: String,
+        name: String,
+        familyKey: String,
+        source: Source,
+        taxonomyIkea: TaxonomyIkea,
+        taxonomyInferred: TaxonomyInferred,
+        price: Price,
+        rating: Rating,
+        dimensionsIkea: DimensionsIkea,
+        dimensionsBbox: DimensionsBbox,
+        attributes: Attributes,
+        designSummary: String,
+        description: String,
+        embeddingText: String,
+        files: Files
+    ) {
+        self.id = id
+        self.name = name
+        self.familyKey = familyKey
+        self.source = source
+        self.taxonomyIkea = taxonomyIkea
+        self.taxonomyInferred = taxonomyInferred
+        self.price = price
+        self.rating = rating
+        self.dimensionsIkea = dimensionsIkea
+        self.dimensionsBbox = dimensionsBbox
+        self.attributes = attributes
+        self.designSummary = designSummary
+        self.description = description
+        self.embeddingText = embeddingText
+        self.files = files
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        if let id = try container.decodeIfPresent(String.self, forKey: .id) {
+            self.id = id
+        } else {
+            self.id = try container.decode(String.self, forKey: .legacyID)
+        }
+
+        name = try container.decode(String.self, forKey: .name)
+        familyKey = try container.decode(String.self, forKey: .familyKey)
+        source = try container.decode(Source.self, forKey: .source)
+        taxonomyIkea = try container.decode(TaxonomyIkea.self, forKey: .taxonomyIkea)
+        taxonomyInferred = try container.decode(TaxonomyInferred.self, forKey: .taxonomyInferred)
+        price = try container.decode(Price.self, forKey: .price)
+        rating = try container.decode(Rating.self, forKey: .rating)
+        dimensionsIkea = try container.decode(DimensionsIkea.self, forKey: .dimensionsIkea)
+        dimensionsBbox = try container.decode(DimensionsBbox.self, forKey: .dimensionsBbox)
+        attributes = try container.decode(Attributes.self, forKey: .attributes)
+        designSummary = try container.decode(String.self, forKey: .designSummary)
+        description = try container.decode(String.self, forKey: .description)
+        embeddingText = try container.decode(String.self, forKey: .embeddingText)
+        files = try container.decode(Files.self, forKey: .files)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(familyKey, forKey: .familyKey)
+        try container.encode(source, forKey: .source)
+        try container.encode(taxonomyIkea, forKey: .taxonomyIkea)
+        try container.encode(taxonomyInferred, forKey: .taxonomyInferred)
+        try container.encode(price, forKey: .price)
+        try container.encode(rating, forKey: .rating)
+        try container.encode(dimensionsIkea, forKey: .dimensionsIkea)
+        try container.encode(dimensionsBbox, forKey: .dimensionsBbox)
+        try container.encode(attributes, forKey: .attributes)
+        try container.encode(designSummary, forKey: .designSummary)
+        try container.encode(description, forKey: .description)
+        try container.encode(embeddingText, forKey: .embeddingText)
+        try container.encode(files, forKey: .files)
     }
 }
 
@@ -233,34 +312,6 @@ extension Furniture {
 
     var remoteUSDZURL: URL? {
         URL(string: files.usdzURL)
-    }
-}
-
-enum FurnitureCatalogLoader {
-    static func loadFromBackendSample() throws -> [Furniture] {
-        let decoder = JSONDecoder()
-        let candidateURLs: [URL?] = [
-            Bundle.main.url(forResource: "fromBackend", withExtension: "json"),
-            Bundle.main.url(forResource: "fromBackend", withExtension: "json", subdirectory: "JSON_testfiles")
-        ]
-
-        guard let url = candidateURLs.compactMap({ $0 }).first else {
-            throw FurnitureCatalogLoaderError.sampleFileMissing
-        }
-
-        let data = try Data(contentsOf: url)
-        return [try decoder.decode(Furniture.self, from: data)]
-    }
-}
-
-enum FurnitureCatalogLoaderError: LocalizedError {
-    case sampleFileMissing
-
-    var errorDescription: String? {
-        switch self {
-        case .sampleFileMissing:
-            return "The bundled sample file fromBackend.json could not be found."
-        }
     }
 }
 

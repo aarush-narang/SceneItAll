@@ -19,44 +19,17 @@ struct FurnitureCatalogListView: View {
     @State private var isShowingLoadError = false
 
     var body: some View {
-        List(furnitureItems, id: \.id) { furniture in
-            Button {
+        FurnitureSearchView(
+            onFurnitureSelected: { furniture in
+                furnitureItems = updateStoredFurnitureItems(with: furniture)
                 selectedFurniture = furniture
-            } label: {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(furniture.name)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        Text(furniture.formattedPrice)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .contentShape(Rectangle())
+            },
+            onError: { message in
+                loadErrorMessage = message
+                isShowingLoadError = true
             }
-            .buttonStyle(.plain)
-        }
-        .overlay {
-            if furnitureItems.isEmpty {
-                ContentUnavailableView(
-                    "No Furniture",
-                    systemImage: "shippingbox",
-                    description: Text("The sample backend furniture file could not be loaded.")
-                )
-            }
-        }
+        )
         .navigationTitle("Furniture Catalog")
-        .task {
-            await loadFurnitureIfNeeded()
-        }
         .sheet(item: $selectedFurniture) { furniture in
             FurnitureDetailView(furniture: furniture) { localUSDZURL in
                 let objectID = UUID().uuidString
@@ -91,18 +64,14 @@ struct FurnitureCatalogListView: View {
         }
     }
 
-    @MainActor
-    private func loadFurnitureIfNeeded() async {
-        guard furnitureItems.isEmpty else {
-            return
+    private func updateStoredFurnitureItems(with furniture: Furniture) -> [Furniture] {
+        if let existingIndex = furnitureItems.firstIndex(where: { $0.id == furniture.id }) {
+            var updatedItems = furnitureItems
+            updatedItems[existingIndex] = furniture
+            return updatedItems
         }
 
-        do {
-            furnitureItems = try FurnitureCatalogLoader.loadFromBackendSample()
-        } catch {
-            loadErrorMessage = error.localizedDescription
-            isShowingLoadError = true
-        }
+        return furnitureItems + [furniture]
     }
 }
 
