@@ -47,7 +47,7 @@ def _empty_bedroom_doc(*, design_id: str, user_id: str) -> dict:
             "walls": [],
             "openings": [],
         },
-        "placed_items": [],
+        "objects": [],
         "created_at": now,
         "updated_at": now,
         "deleted_at": None,
@@ -98,6 +98,6 @@ async def test_passive_search_then_text(monkeypatch):
 
         # Design was not touched
         doc = await db.find_one({"_id": design_id})
-        assert doc["placed_items"] == []
+        assert doc["objects"] == []
     finally:
         await db.delete_one({"_id": design_id})

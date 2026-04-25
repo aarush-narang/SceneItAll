@@ -96,7 +96,7 @@ def _format_room_digest(design: dict[str, Any]) -> str:
     room = shell["room"]
     walls = shell.get("walls") or []
     openings = shell.get("openings") or []
-    placed = design.get("placed_items") or []
+    placed = design.get("objects") or []
 
     lines: list[str] = ["ROOM DIGEST"]
     lines.append(

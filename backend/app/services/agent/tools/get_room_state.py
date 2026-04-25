@@ -40,7 +40,7 @@ class GetRoomStateOutput(BaseModel):
     floor_polygon: list[list[float]]
     walls: list[dict[str, Any]] = Field(default_factory=list)
     openings: list[dict[str, Any]] = Field(default_factory=list)
-    placed_items: list[PlacedItemSummary] = Field(default_factory=list)
+    objects: list[PlacedItemSummary] = Field(default_factory=list)
 
 
 def _summarise_placed(doc: dict[str, Any]) -> PlacedItemSummary:
@@ -86,5 +86,5 @@ async def get_room_state(ctx: AgentContext, inp: GetRoomStateInput) -> GetRoomSt
         floor_polygon=[list(p) for p in room.get("floor_polygon", [])],
         walls=shell.get("walls") or [],
         openings=shell.get("openings") or [],
-        placed_items=[_summarise_placed(p) for p in design.get("placed_items", [])],
+        objects=[_summarise_placed(p) for p in design.get("objects", [])],
     )

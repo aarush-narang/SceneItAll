@@ -35,13 +35,13 @@ def sample_shell() -> dict:
     }
 
 
-def design_payload(user_id: str | None = None, placed_items: list[dict] | None = None) -> dict:
+def design_payload(user_id: str | None = None, objects: list[dict] | None = None) -> dict:
     return {
         "user_id": user_id or str(uuid4()),
         "name": "Test Design",
         "preference_profile_id": None,
         "shell": sample_shell(),
-        "placed_items": placed_items or [],
+        "objects": objects or [],
     }
 
 
@@ -86,7 +86,7 @@ def test_create_design_route():
     assert isinstance(data["id"], str)
     assert data["name"] == payload["name"]
     assert data["user_id"] == payload["user_id"]
-    assert data["placed_items"] == []
+    assert data["objects"] == []
 
 
 def test_list_designs_route():
@@ -175,7 +175,7 @@ def test_validate_placement_valid():
         })
 
     assert response.status_code == 200, response.json()
-    assert len(response.json()["placed_items"]) == 1
+    assert len(response.json()["objects"]) == 1
 
 
 def test_validate_placement_outside_floor_polygon():
@@ -229,7 +229,7 @@ def test_validate_placement_upside_down():
 def test_validate_placement_collides_with_existing():
     """A new item whose OBB overlaps an existing placed item returns 422."""
     existing = sample_placed_object(position=(2.5, 0.0, 2.0))
-    payload = design_payload(placed_items=[existing])
+    payload = design_payload(objects=[existing])
 
     with TestClient(app) as client:
         created = client.post("/designs", json=payload).json()
