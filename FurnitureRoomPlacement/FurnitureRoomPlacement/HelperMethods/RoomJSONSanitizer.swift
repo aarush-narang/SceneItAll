@@ -9,13 +9,26 @@ import Foundation
 
 final class RoomJSONSanitizer {
     static func sanitizedRoom(from data: Data) throws -> SanitizedRoomPayload {
+        try sanitizedRoom(from: data, objects: [])
+    }
+
+    static func sanitizedRoom(from data: Data, objects: [PlacedFurnitureObject]) throws -> SanitizedRoomPayload {
         let decoder = JSONDecoder()
         let room = try decoder.decode(RawCapturedRoom.self, from: data)
-        return sanitizedRoom(from: room)
+        return sanitizedRoom(from: room, objects: objects)
     }
 
     static func sanitizedJSONData(from data: Data, prettyPrinted: Bool = true) throws -> Data {
         let sanitizedRoom = try sanitizedRoom(from: data)
+        return try sanitizedJSONData(from: sanitizedRoom, prettyPrinted: prettyPrinted)
+    }
+
+    static func sanitizedJSONData(
+        from data: Data,
+        appending objects: [PlacedFurnitureObject],
+        prettyPrinted: Bool = true
+    ) throws -> Data {
+        let sanitizedRoom = try sanitizedRoom(from: data, objects: objects)
         return try sanitizedJSONData(from: sanitizedRoom, prettyPrinted: prettyPrinted)
     }
 
@@ -28,6 +41,10 @@ final class RoomJSONSanitizer {
     }
 
     static func sanitizedRoom(from room: RawCapturedRoom) -> SanitizedRoomPayload {
+        sanitizedRoom(from: room, objects: [])
+    }
+
+    static func sanitizedRoom(from room: RawCapturedRoom, objects: [PlacedFurnitureObject]) -> SanitizedRoomPayload {
         let sanitizedWalls = room.walls.enumerated().map { index, wall in
             sanitizedWall(from: wall, fallbackID: "wall_\(index + 1)")
         }
@@ -67,6 +84,7 @@ final class RoomJSONSanitizer {
             ),
             walls: sanitizedWalls,
             openings: sanitizedOpenings,
+            objects: objects,
             metadata: SanitizedMetadata(
                 sourceVersion: room.version,
                 generatedAt: ISO8601DateFormatter().string(from: Date())
@@ -378,7 +396,37 @@ struct SanitizedRoomPayload: Codable {
     let room: SanitizedRoom
     let walls: [SanitizedWall]
     let openings: [SanitizedOpening]
+    let objects: [PlacedFurnitureObject]
     let metadata: SanitizedMetadata
+
+    init(
+        schemaVersion: String,
+        units: String,
+        room: SanitizedRoom,
+        walls: [SanitizedWall],
+        openings: [SanitizedOpening],
+        objects: [PlacedFurnitureObject] = [],
+        metadata: SanitizedMetadata
+    ) {
+        self.schemaVersion = schemaVersion
+        self.units = units
+        self.room = room
+        self.walls = walls
+        self.openings = openings
+        self.objects = objects
+        self.metadata = metadata
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(String.self, forKey: .schemaVersion)
+        units = try container.decode(String.self, forKey: .units)
+        room = try container.decode(SanitizedRoom.self, forKey: .room)
+        walls = try container.decode([SanitizedWall].self, forKey: .walls)
+        openings = try container.decode([SanitizedOpening].self, forKey: .openings)
+        objects = try container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects) ?? []
+        metadata = try container.decode(SanitizedMetadata.self, forKey: .metadata)
+    }
 }
 
 struct SanitizedRoom: Codable {

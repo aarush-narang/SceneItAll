@@ -390,9 +390,9 @@ private struct ImportedRoomShellView: View {
     private func saveRoomJSON() {
         do {
             let updatedObjects = placedObjects.map(currentPlacement(for:))
-            let updatedData = try BarebonesRoomJSONSanitizer.roomData(
-                byUpdatingObjects: updatedObjects,
-                in: baseRoomData
+            let updatedData = try RoomJSONSanitizer.sanitizedJSONData(
+                from: baseRoomData,
+                appending: updatedObjects
             )
             exportDocument = JSONExportDocument(data: updatedData)
             isShowingSaveExporter = true
