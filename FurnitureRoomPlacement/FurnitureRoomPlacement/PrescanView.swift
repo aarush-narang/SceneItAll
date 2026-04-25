@@ -11,6 +11,28 @@ import SceneKit
 import UniformTypeIdentifiers
 import UIKit
 
+private struct JSONExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        self.data = data
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
 private enum FurnitureInteractionMode {
     case view
     case move
@@ -27,6 +49,8 @@ struct OnboardingView: View {
     @State private var isShowingImporter = false
     @State private var importMode: ImportMode = .barebones
     @State private var importedScene: SCNScene?
+    @State private var importedRoomData: Data?
+    @State private var importedPlacedObjects: [PlacedFurnitureObject] = []
     @State private var importedFileName = ""
     @State private var importErrorMessage = ""
     @State private var isShowingImportError = false
@@ -104,7 +128,12 @@ struct OnboardingView: View {
             .presentationDetents([.medium])
         }
         .fullScreenCover(item: $importedScene) { scene in
-            ImportedRoomShellView(scene: scene, title: importedFileName)
+            ImportedRoomShellView(
+                scene: scene,
+                title: importedFileName,
+                baseRoomData: importedRoomData ?? Data(),
+                initialPlacedObjects: importedPlacedObjects
+            )
         }
         .fileImporter(
             isPresented: $isShowingImporter,
@@ -135,10 +164,15 @@ struct OnboardingView: View {
 
             switch importMode {
             case .barebones:
-                scene = try BarebonesRoomImportLoader.loadScene(from: data)
+                let normalizedData = try BarebonesRoomJSONSanitizer.normalizedRoomData(from: data)
+                scene = try BarebonesRoomImportLoader.loadScene(from: normalizedData)
+                importedRoomData = normalizedData
+                importedPlacedObjects = try BarebonesRoomImportLoader.loadPlacedObjects(from: normalizedData)
             case .stripFurniture:
                 let strippedData = try BarebonesRoomJSONSanitizer.stripToEssentialSurfaces(from: data)
                 scene = try BarebonesRoomImportLoader.loadScene(from: strippedData)
+                importedRoomData = strippedData
+                importedPlacedObjects = []
             }
 
             importedFileName = fileURL.deletingPathExtension().lastPathComponent
@@ -175,9 +209,31 @@ private struct ImportedRoomShellView: View {
     @State private var areWallsDimmed = false
     @State private var showFurnitureCatalog: Bool = false
     @State private var furnitureInteractionMode: FurnitureInteractionMode = .view
+    @State private var placedObjects: [PlacedFurnitureObject] = []
+    @State private var exportDocument: JSONExportDocument?
+    @State private var isShowingSaveExporter = false
+    @State private var exportErrorMessage = ""
+    @State private var isShowingExportError = false
+    @State private var hasRestoredSavedFurniture = false
 
     let scene: SCNScene
     let title: String
+    let baseRoomData: Data
+    let initialPlacedObjects: [PlacedFurnitureObject]
+
+    init(
+        scene: SCNScene,
+        title: String,
+        baseRoomData: Data,
+        initialPlacedObjects: [PlacedFurnitureObject]
+    ) {
+        self.scene = scene
+        self.title = title
+        self.baseRoomData = baseRoomData
+        self.initialPlacedObjects = initialPlacedObjects
+        _placedObjects = State(initialValue: initialPlacedObjects)
+        _hasOverlayedExternalUSDZ = State(initialValue: !initialPlacedObjects.isEmpty)
+    }
 
     var body: some View {
         NavigationStack {
@@ -215,7 +271,13 @@ private struct ImportedRoomShellView: View {
                     }
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !placedObjects.isEmpty {
+                        Button("Save") {
+                            saveRoomJSON()
+                        }
+                    }
+
                     Button("Close") {
                         dismiss()
                     }
@@ -226,9 +288,28 @@ private struct ImportedRoomShellView: View {
             } message: {
                 Text("The app could not load the external USDZ asset.")
             }
+            .alert("Save Failed", isPresented: $isShowingExportError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(exportErrorMessage)
+            }
             .onChange(of: hasOverlayedExternalUSDZ) { _, hasOverlay in
                 if !hasOverlay {
                     furnitureInteractionMode = .view
+                }
+            }
+            .task {
+                await restoreSavedFurnitureIfNeeded()
+            }
+            .fileExporter(
+                isPresented: $isShowingSaveExporter,
+                document: exportDocument,
+                contentType: .json,
+                defaultFilename: defaultExportFileName
+            ) { result in
+                if case .failure(let error) = result {
+                    exportErrorMessage = error.localizedDescription
+                    isShowingExportError = true
                 }
             }
             .sheet(isPresented: $showFurnitureCatalog) {
@@ -236,7 +317,10 @@ private struct ImportedRoomShellView: View {
                     FurnitureCatalogListView(
                         showFurnitureCatalog: $showFurnitureCatalog,
                         hasOverlayedExternalUSDZ: $hasOverlayedExternalUSDZ,
-                        scene: scene
+                        scene: scene,
+                        onFurnitureAdded: { placedObject in
+                            placedObjects.append(placedObject)
+                        }
                     )
                 }
                 .presentationDetents([.fraction(0.92), .large])
@@ -295,6 +379,86 @@ private struct ImportedRoomShellView: View {
 
         for childNode in node.childNodes {
             updateDepthRecursively(for: childNode, writesToDepthBuffer: writesToDepthBuffer)
+        }
+    }
+
+    private var defaultExportFileName: String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? "BarebonesRoom" : "\(trimmedTitle)_furnished"
+    }
+
+    private func saveRoomJSON() {
+        do {
+            let updatedObjects = placedObjects.map(currentPlacement(for:))
+            let updatedData = try BarebonesRoomJSONSanitizer.roomData(
+                byUpdatingObjects: updatedObjects,
+                in: baseRoomData
+            )
+            exportDocument = JSONExportDocument(data: updatedData)
+            isShowingSaveExporter = true
+        } catch {
+            exportErrorMessage = error.localizedDescription
+            isShowingExportError = true
+        }
+    }
+
+    private func currentPlacement(for object: PlacedFurnitureObject) -> PlacedFurnitureObject {
+        let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: object.id)
+        guard let placedNode = scene.rootNode.childNode(withName: nodeName, recursively: true) else {
+            return object
+        }
+
+        var updatedObject = object
+        updatedObject.placement = FurniturePlacement(from: placedNode)
+        return updatedObject
+    }
+
+    private func restoreSavedFurnitureIfNeeded() async {
+        guard !hasRestoredSavedFurniture else {
+            return
+        }
+
+        hasRestoredSavedFurniture = true
+
+        for object in initialPlacedObjects {
+            let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: object.id)
+            let alreadyLoaded = await MainActor.run {
+                scene.rootNode.childNode(withName: nodeName, recursively: true) != nil
+            }
+
+            if alreadyLoaded {
+                continue
+            }
+
+            do {
+                guard let remoteURL = object.furniture.remoteUSDZURL else {
+                    continue
+                }
+
+                let localURL = try await RemoteUSDZCache.shared.localFileURL(for: remoteURL)
+                let didAddOverlay = await MainActor.run {
+                    BarebonesRoomSceneBuilder.overlayExternalUSDZ(
+                        on: scene,
+                        fileURL: localURL,
+                        overlayIdentifier: object.id
+                    )
+                }
+
+                guard didAddOverlay else {
+                    continue
+                }
+
+                await MainActor.run {
+                    if let restoredNode = scene.rootNode.childNode(withName: nodeName, recursively: true) {
+                        object.placement.apply(to: restoredNode)
+                    }
+                    hasOverlayedExternalUSDZ = true
+                }
+            } catch {
+                await MainActor.run {
+                    isShowingOverlayError = true
+                }
+            }
         }
     }
 }

@@ -166,6 +166,63 @@ struct Files: Codable {
     }
 }
 extension Furniture {
+    var savedSnapshot: SavedFurnitureSnapshot {
+        SavedFurnitureSnapshot(
+            id: id,
+            name: name,
+            familyKey: familyKey,
+            dimensionsBbox: dimensionsBbox,
+            files: SavedFurnitureFiles(usdzURL: files.usdzURL)
+        )
+    }
+
+    init(savedSnapshot: SavedFurnitureSnapshot) {
+        self.init(
+            id: savedSnapshot.id,
+            name: savedSnapshot.name,
+            familyKey: savedSnapshot.familyKey,
+            source: Source(name: "saved_snapshot", url: ""),
+            taxonomyIkea: TaxonomyIkea(
+                categoryLeaf: "",
+                categoryPath: [],
+                segment: "",
+                topDepartment: "",
+                material: "",
+                color: ""
+            ),
+            taxonomyInferred: TaxonomyInferred(category: "", subcategory: ""),
+            price: Price(value: 0, currency: "USD"),
+            rating: Rating(value: 0, count: 0),
+            dimensionsIkea: DimensionsIkea(widthIn: 0, depthIn: 0, heightIn: 0),
+            dimensionsBbox: savedSnapshot.dimensionsBbox,
+            attributes: Attributes(
+                styleTags: [],
+                designLineage: "",
+                materialPrimary: "",
+                textureAndFinish: "",
+                colorPrimary: "",
+                era: "",
+                formality: "",
+                ambientMood: [],
+                visualWeight: "",
+                scale: "",
+                roomRole: "",
+                suitableRooms: [],
+                placementHints: [],
+                pairsWellWith: [],
+                useScenarios: [],
+                spaceRequirements: "",
+                hasArms: false,
+                hasLegs: false,
+                stackable: false
+            ),
+            designSummary: "",
+            description: "",
+            embeddingText: "",
+            files: Files(usdzURL: savedSnapshot.files.usdzURL, thumbURLs: [])
+        )
+    }
+
     var formattedPrice: String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency

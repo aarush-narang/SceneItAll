@@ -11,6 +11,7 @@ struct FurnitureCatalogListView: View {
     @Binding var showFurnitureCatalog: Bool
     @Binding var hasOverlayedExternalUSDZ: Bool
     let scene: SCNScene
+    let onFurnitureAdded: (PlacedFurnitureObject) -> Void
 
     @State private var furnitureItems: [Furniture] = []
     @State private var selectedFurniture: Furniture?
@@ -58,8 +59,23 @@ struct FurnitureCatalogListView: View {
         }
         .sheet(item: $selectedFurniture) { furniture in
             FurnitureDetailView(furniture: furniture) { localUSDZURL in
-                let addSuccess = BarebonesRoomSceneBuilder.overlayExternalUSDZ(on: scene, fileURL: localUSDZURL)
+                let objectID = UUID().uuidString
+                let addSuccess = BarebonesRoomSceneBuilder.overlayExternalUSDZ(
+                    on: scene,
+                    fileURL: localUSDZURL,
+                    overlayIdentifier: objectID
+                )
                 if addSuccess {
+                    let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: objectID)
+                    let placedNode = scene.rootNode.childNode(withName: nodeName, recursively: true)
+                    let placement = placedNode.map(FurniturePlacement.init(from:)) ?? .defaultPlacement
+                    let addedObject = PlacedFurnitureObject(
+                        id: objectID,
+                        furniture: furniture,
+                        placement: placement,
+                        addedAt: ISO8601DateFormatter().string(from: Date())
+                    )
+                    onFurnitureAdded(addedObject)
                     hasOverlayedExternalUSDZ = true
                     showFurnitureCatalog = false
                 }
@@ -220,11 +236,7 @@ struct FurnitureDetailView: View {
         previewScene = makePreviewScene()
 
         do {
-            guard let remoteURL = furniture.remoteUSDZURL else {
-                throw FurnitureDetailError.invalidUSDZURL
-            }
-
-            let localURL = try await RemoteUSDZCache.shared.localFileURL(for: remoteURL)
+            let localURL = try await resolvedUSDZURL()
             configurePreviewScene(scene: previewScene, fileURL: localURL)
             previewState = .loaded
         } catch {
@@ -239,12 +251,8 @@ struct FurnitureDetailView: View {
         }
 
         do {
-            guard let remoteURL = furniture.remoteUSDZURL else {
-                throw FurnitureDetailError.invalidUSDZURL
-            }
-
             isAddingToRoom = true
-            let localURL = try await RemoteUSDZCache.shared.localFileURL(for: remoteURL)
+            let localURL = try await resolvedUSDZURL()
             onAdd(localURL)
             dismiss()
         } catch {
@@ -253,6 +261,14 @@ struct FurnitureDetailView: View {
         }
 
         isAddingToRoom = false
+    }
+
+    private func resolvedUSDZURL() async throws -> URL {
+        guard let remoteURL = furniture.remoteUSDZURL else {
+            throw FurnitureDetailError.invalidUSDZURL
+        }
+
+        return try await RemoteUSDZCache.shared.localFileURL(for: remoteURL)
     }
 }
 
