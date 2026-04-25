@@ -1,7 +1,7 @@
-from __future__ import annotations
 from fastapi import APIRouter
+
 from ..models.agent import AgentChatRequest, AgentChatResponse
-from ..services.gemini import run_agent_chat
+from ..services.agent import run_agent_chat
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
