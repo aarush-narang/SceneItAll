@@ -3,68 +3,20 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..db import designs_col, furniture_col
+from ..db import designs_col
 from ..models.design import (
     DesignCreateRequest,
     DesignPatchRequest,
     DesignPublic,
     PlacedObject,
 )
-from ..utils.geometry import PlacementBox, check_item_placement, derive_floor_y
+from ..services.placement import validate_placement
 
 router = APIRouter(prefix="/designs", tags=["designs"])
 
 
-def _placement_box_from_model(item: PlacedObject) -> PlacementBox:
-    bbox = item.furniture.dimensions_bbox
-    return PlacementBox(
-        position=tuple(item.placement.position),
-        euler_angles=tuple(item.placement.euler_angles),
-        width_m=bbox.width_m,
-        height_m=bbox.height_m,
-        depth_m=bbox.depth_m,
-    )
-
-
-def _placement_box_from_doc(doc: dict) -> PlacementBox | None:
-    placement = doc.get("placement") or {}
-    bbox = (doc.get("furniture") or {}).get("dimensions_bbox") or {}
-    pos = placement.get("position")
-    if not pos or not bbox:
-        return None
-    return PlacementBox(
-        position=tuple(pos),
-        euler_angles=tuple(placement.get("euler_angles", (0.0, 0.0, 0.0))),
-        width_m=bbox["width_m"],
-        height_m=bbox["height_m"],
-        depth_m=bbox["depth_m"],
-    )
-
-
 async def _validate_placed_object(item: PlacedObject, design_doc: dict) -> None:
-    catalog_id = item.furniture.id
-    if not await furniture_col().count_documents({"_id": catalog_id}, limit=1):
-        raise HTTPException(status_code=422, detail=f"Furniture item {catalog_id} not found")
-
-    shell = design_doc["shell"]
-    room = shell["room"]
-    floor_y = derive_floor_y(shell.get("walls") or [])
-
-    others: list[PlacementBox] = []
-    for o in design_doc.get("placed_items", []):
-        if o.get("id") == item.id:
-            continue
-        box = _placement_box_from_doc(o)
-        if box is not None:
-            others.append(box)
-
-    is_valid, error_msg = check_item_placement(
-        _placement_box_from_model(item),
-        floor_polygon=room["floor_polygon"],
-        ceiling_height=room["ceiling_height"],
-        floor_y=floor_y,
-        other_items=others,
-    )
+    is_valid, error_msg = await validate_placement(item, design_doc)
     if not is_valid:
         raise HTTPException(status_code=422, detail=error_msg)
 

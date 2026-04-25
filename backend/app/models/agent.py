@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .design import Vec3
+from .design import PlacedObject, Vec3
 
 
 class ChatTurn(BaseModel):
@@ -30,15 +30,36 @@ class AgentChatRequest(BaseModel):
     session_id: str | None = None
 
 
-class PlacementSuggestion(BaseModel):
-    item_id: str       # references FurnitureItem.id
-    position: Vec3     # room-local meters
-    euler_angles: Vec3 # radians (x, y, z), SceneKit ZYX intrinsic order
-    rationale: str
+class Mutations(BaseModel):
+    """Concrete changes the agent applied to the design during this turn.
+    Empty when the turn was purely passive (recommendations only)."""
+
+    placements_added: list[PlacedObject] = Field(default_factory=list)
+    placements_removed: list[str] = Field(default_factory=list)        # instance ids
+    placements_moved: list[PlacedObject] = Field(default_factory=list)
+
+
+class Recommendation(BaseModel):
+    """A passive suggestion the agent surfaced for the user to consider.
+    `suggested_position` is populated when the agent has a specific spot in mind."""
+
+    item_id: str
+    name: str
+    reason: str
+    suggested_position: Vec3 | None = None
+
+
+class ToolCallLog(BaseModel):
+    tool: str
+    args: dict[str, Any]
+    result: dict[str, Any]
+    ms: int
 
 
 class AgentChatResponse(BaseModel):
     session_id: str
     assistant_text: str
-    placements: list[PlacementSuggestion] = []
-    tool_calls: list[dict[str, Any]] = []
+    mutations: Mutations = Field(default_factory=Mutations)
+    recommendations: list[Recommendation] = Field(default_factory=list)
+    tool_calls: list[ToolCallLog] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

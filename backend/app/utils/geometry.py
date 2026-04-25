@@ -11,6 +11,10 @@ from typing import Sequence
 
 _DEFAULT_UPRIGHT_TOLERANCE_RAD = math.radians(15)
 _DEFAULT_FLOOR_TOLERANCE_M = 0.05
+_DEFAULT_DOOR_CLEARANCE_M = 1.0
+_DEFAULT_OPENING_CLEARANCE_M = 1.0
+_DEFAULT_WINDOW_CLEARANCE_M = 0.0
+_INWARD_PROBE_M = 0.1
 
 
 @dataclass(frozen=True)
@@ -87,6 +91,61 @@ def is_upright(
     return abs(pitch) <= tolerance_rad and abs(roll) <= tolerance_rad
 
 
+def opening_clearance_zone(
+    opening: dict,
+    wall: dict,
+    floor_polygon: Sequence[Sequence[float]],
+    clearance_m: float,
+) -> list[tuple[float, float]] | None:
+    """4 corners of the floor-plane clearance rectangle in front of an opening.
+
+    The rectangle sits flush with the wall (its base edge spans the opening's
+    width) and extends `clearance_m` inward into the room. Used to prevent
+    furniture from being placed where it would block a door's swing path or an
+    open passageway.
+
+    Returns `None` when `clearance_m <= 0`, the wall geometry is degenerate, or
+    the inward direction can't be determined (no candidate normal lands inside
+    the floor polygon).
+    """
+    if clearance_m <= 0:
+        return None
+
+    cx, cz = opening["center"][0], opening["center"][2]
+    width = float(opening["width"])
+
+    sx, sz = wall["start"][0], wall["start"][1]
+    ex, ez = wall["end"][0], wall["end"][1]
+    dx, dz = ex - sx, ez - sz
+    length = math.hypot(dx, dz)
+    if length < 1e-9:
+        return None
+    tx, tz = dx / length, dz / length          # wall tangent
+    nx, nz = -tz, tx                           # candidate normal
+
+    if not point_in_polygon(cx + nx * _INWARD_PROBE_M, cz + nz * _INWARD_PROBE_M, floor_polygon):
+        nx, nz = -nx, -nz
+        if not point_in_polygon(cx + nx * _INWARD_PROBE_M, cz + nz * _INWARD_PROBE_M, floor_polygon):
+            return None
+
+    half_w = width / 2
+    base_l = (cx - half_w * tx, cz - half_w * tz)
+    base_r = (cx + half_w * tx, cz + half_w * tz)
+    far_r = (base_r[0] + nx * clearance_m, base_r[1] + nz * clearance_m)
+    far_l = (base_l[0] + nx * clearance_m, base_l[1] + nz * clearance_m)
+    return [base_l, base_r, far_r, far_l]
+
+
+def default_clearance_for(opening_type: str) -> float:
+    """Default inward clearance depth for a door/opening/window type. Doors and
+    open passageways block placements by default; windows do not."""
+    if opening_type == "door":
+        return _DEFAULT_DOOR_CLEARANCE_M
+    if opening_type == "opening":
+        return _DEFAULT_OPENING_CLEARANCE_M
+    return _DEFAULT_WINDOW_CLEARANCE_M
+
+
 def derive_floor_y(walls: Sequence[dict], default: float = 0.0) -> float:
     """Absolute floor y in ARKit world space, derived from wall geometry.
 
@@ -104,6 +163,7 @@ def check_item_placement(
     ceiling_height: float,
     floor_y: float = 0.0,
     other_items: Sequence[PlacementBox] = (),
+    forbidden_zones: Sequence[tuple[str, Sequence[Sequence[float]]]] = (),
     upright_tolerance_rad: float = _DEFAULT_UPRIGHT_TOLERANCE_RAD,
     floor_tolerance_m: float = _DEFAULT_FLOOR_TOLERANCE_M,
 ) -> tuple[bool, str | None]:
@@ -111,8 +171,10 @@ def check_item_placement(
 
     Checks, in order: orientation is upright, xz footprint lies inside the floor
     polygon, vertical extents fit between floor and ceiling, no OBB overlap with
-    `other_items`. Returns `(True, None)` on success, `(False, message)` on the
-    first failure.
+    `other_items`, no overlap with any `forbidden_zones` (e.g. door clearance
+    rectangles). Each forbidden zone is a `(label, corners)` pair so the error
+    message can name what was blocked. Returns `(True, None)` on success,
+    `(False, message)` on the first failure.
     """
     if not is_upright(item.euler_angles, upright_tolerance_rad):
         pitch, _, roll = item.euler_angles
@@ -151,5 +213,9 @@ def check_item_placement(
         )
         if boxes_overlap_xz(corners, b_corners):
             return False, "Item collides with an existing placed item"
+
+    for label, zone in forbidden_zones:
+        if boxes_overlap_xz(corners, zone):
+            return False, f"Item blocks the clearance zone of {label}"
 
     return True, None
