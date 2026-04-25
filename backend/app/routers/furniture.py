@@ -2,7 +2,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from ..db import furniture_col
 from ..models.furniture import FurnitureItemPublic
-from ..services.embeddings import embed_text
+from ..services.embeddings import embed_text_gemini
 
 router = APIRouter(prefix="/furniture", tags=["furniture"])
 
@@ -14,12 +14,12 @@ async def search_furniture(
     max_price: float | None = Query(None),
     limit: int = Query(10, ge=1, le=100),
 ):
-    text_vec = embed_text(q)
+    text_vec = embed_text_gemini(q)
     pipeline = [
         {
             "$vectorSearch": {
-                "index": "text_index",
-                "path": "text_embedding",
+                "index": "text_embedding",
+                "path": "embeddings.text.vec",
                 "queryVector": text_vec,
                 "numCandidates": limit * 10,
                 "limit": limit * 4,
@@ -36,7 +36,7 @@ async def search_furniture(
         pipeline.append({"$match": match})
 
     pipeline.append({"$limit": limit})
-    pipeline.append({"$project": {"visual_embedding": 0, "text_embedding": 0}})
+    pipeline.append({"$project": {"embeddings": 0, "score": {"$meta": "vectorSearchScore"}}})
 
     col = furniture_col()
     docs = await col.aggregate(pipeline).to_list(length=limit)
@@ -54,15 +54,15 @@ async def similar_furniture(
     if not source:
         raise HTTPException(status_code=404, detail=f"Item {id} not found")
 
-    visual_vec = source.get("visual_embedding")
+    visual_vec = source.get("embeddings", {}).get("visual", {}).get("vec")
     if not visual_vec:
         raise HTTPException(status_code=422, detail="Item has no visual embedding")
 
     pipeline = [
         {
             "$vectorSearch": {
-                "index": "visual_index",
-                "path": "visual_embedding",
+                "index": "text_embedding",
+                "path": "embeddings.visual.vec",
                 "queryVector": visual_vec,
                 "numCandidates": (limit + 1) * 10,
                 "limit": (limit + 1) * 4,
@@ -73,7 +73,7 @@ async def similar_furniture(
     if max_price is not None:
         pipeline.append({"$match": {"price.value": {"$lte": max_price}}})
     pipeline.append({"$limit": limit})
-    pipeline.append({"$project": {"visual_embedding": 0, "text_embedding": 0}})
+    pipeline.append({"$project": {"embeddings": 0}})
 
     docs = await col.aggregate(pipeline).to_list(length=limit)
     return [FurnitureItemPublic.from_doc(d) for d in docs]
@@ -82,7 +82,7 @@ async def similar_furniture(
 @router.get("/{id}", response_model=FurnitureItemPublic)
 async def get_furniture(id: str):
     col = furniture_col()
-    doc = await col.find_one({"_id": id}, {"visual_embedding": 0, "text_embedding": 0})
+    doc = await col.find_one({"_id": id}, {"embeddings": 0})
     if not doc:
         raise HTTPException(status_code=404, detail=f"Item {id} not found")
     return FurnitureItemPublic.from_doc(doc)

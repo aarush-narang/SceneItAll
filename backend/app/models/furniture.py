@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, AliasChoices
 
 
 class FurnitureSource(BaseModel):
@@ -32,9 +32,9 @@ class RatingInfo(BaseModel):
 
 
 class IkeaDimensions(BaseModel):
-    width_in: float
-    depth_in: float
-    height_in: float
+    width_in: float | None = None
+    depth_in: float | None = None
+    height_in: float | None = None
 
 
 class BoundingBoxDimensions(BaseModel):
@@ -84,28 +84,31 @@ class FurnitureEmbeddings(BaseModel):
 
 
 class FurnitureItem(BaseModel):
-    id: str | None = Field(default=None, alias="_id")
+    id: str | None = Field(default=None, validation_alias=AliasChoices("_id", "id"))
     name: str
-    family_key: str
-    source: FurnitureSource
-    taxonomy_ikea: IkeaTaxonomy
-    taxonomy_inferred: InferredTaxonomy
-    price: PriceInfo
-    rating: RatingInfo
-    dimensions_ikea: IkeaDimensions
-    dimensions_bbox: BoundingBoxDimensions
-    attributes: FurnitureAttributes
-    design_summary: str
-    description: str
-    embedding_text: str
-    embeddings: FurnitureEmbeddings
-    files: FurnitureFiles
+    family_key: str | None = None
+    source: FurnitureSource | None = None
+    taxonomy_ikea: IkeaTaxonomy | None = None
+    taxonomy_inferred: InferredTaxonomy | None = None
+    price: PriceInfo | None = None
+    rating: RatingInfo | None = None
+    dimensions_ikea: IkeaDimensions | None = None
+    dimensions_bbox: BoundingBoxDimensions | None = None
+    attributes: FurnitureAttributes | None = None
+    design_summary: str | None = None
+    description: str | None = None
+    embedding_text: str | None = None
+    embeddings: FurnitureEmbeddings | None = None
+    files: FurnitureFiles | None = None
 
     model_config = {"populate_by_name": True}
 
 
 class FurnitureItemPublic(FurnitureItem):
-    """API-facing furniture document with `_id` normalized to `id`."""
+    """API-facing furniture document with `_id` normalized to `id` and embeddings stripped."""
+
+    embeddings: FurnitureEmbeddings | None = None
+    score: float | None = None
 
     @classmethod
     def from_doc(cls, doc: dict) -> "FurnitureItemPublic":

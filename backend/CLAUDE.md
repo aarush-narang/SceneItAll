@@ -238,7 +238,7 @@ python backend/scripts/create_db.py
 python backend/scripts/create_indexes.py   # Atlas takes ~1 min to make indexes READY
 
 # Backend
-uvicorn app.main:app --reload --app-dir backend
+uvicorn app.main:app --reload
 ```
 
 No test suite, linter, or CI is configured yet. `requirements.txt` lists all deps for both stub scripts and the backend.

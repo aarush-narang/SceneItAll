@@ -4,7 +4,31 @@ from pathlib import Path
 from PIL import Image
 import torch
 import open_clip
+from google import genai
 from ..config import settings
+
+_gemini_client: genai.Client | None = None
+_gemini_lock = threading.Lock()
+
+
+def _get_gemini() -> genai.Client:
+    global _gemini_client
+    with _gemini_lock:
+        if _gemini_client is None:
+            _gemini_client = genai.Client(api_key=settings.gemini_api_key)
+    return _gemini_client
+
+
+def embed_text_gemini(text: str) -> list[float]:
+    """768-d text embedding via gemini-embedding-001 (matches DB index)."""
+    from google.genai import types
+    client = _get_gemini()
+    result = client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=text,
+        config=types.EmbedContentConfig(output_dimensionality=768),
+    )
+    return result.embeddings[0].values
 
 _lock = threading.Lock()
 _model = None
