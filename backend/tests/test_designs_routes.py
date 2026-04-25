@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.app import app
 
 
 KNOWN_FURNITURE_ID = "00069768"  # exists in the catalog; used for catalog-existence checks
