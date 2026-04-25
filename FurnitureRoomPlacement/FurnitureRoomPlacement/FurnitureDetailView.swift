@@ -415,6 +415,10 @@ private func normalizedPreviewNode(from node: SCNNode) -> SCNNode {
         modelNode.scale = SCNVector3(scale, scale, scale)
     }
 
+    modelNode.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
+    modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
+    modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
+
     containerNode.addChildNode(modelNode)
     containerNode.position.y = 0.2
     return containerNode

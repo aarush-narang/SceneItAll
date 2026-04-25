@@ -215,6 +215,14 @@ private struct ImportedRoomShellView: View {
     @State private var exportErrorMessage = ""
     @State private var isShowingExportError = false
     @State private var hasRestoredSavedFurniture = false
+    @State private var isShowingAssistant = false
+    @State private var assistantDraft = ""
+    @State private var assistantMessages: [ImportedRoomAssistantMessage] = [
+        ImportedRoomAssistantMessage(
+            role: .assistant,
+            text: "Ask about the current room layout. The latest sanitized JSON will be prepared when you send."
+        )
+    ]
 
     let scene: SCNScene
     let title: String
@@ -237,12 +245,21 @@ private struct ImportedRoomShellView: View {
 
     var body: some View {
         NavigationStack {
-            ImportedRoomSceneView(
-                scene: scene,
-                interactionMode: furnitureInteractionMode
-            )
-            .background(Color(white: 0.72))
-            .ignoresSafeArea()
+            ZStack(alignment: .bottomLeading) {
+                ImportedRoomSceneView(
+                    scene: scene,
+                    interactionMode: furnitureInteractionMode
+                )
+                .background(Color(white: 0.72))
+                .ignoresSafeArea()
+
+                ImportedRoomAssistantOverlay(
+                    isPresented: $isShowingAssistant,
+                    draft: $assistantDraft,
+                    messages: assistantMessages,
+                    onSend: handleAssistantSend
+                )
+            }
             .navigationTitle(title.isEmpty ? "Imported Room" : title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -273,7 +290,7 @@ private struct ImportedRoomShellView: View {
 
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if !placedObjects.isEmpty {
-                        Button("Save") {
+                        Button("Export") {
                             saveRoomJSON()
                         }
                     }
@@ -400,6 +417,54 @@ private struct ImportedRoomShellView: View {
             exportErrorMessage = error.localizedDescription
             isShowingExportError = true
         }
+    }
+
+    private func handleAssistantSend() {
+        let trimmedPrompt = assistantDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else {
+            return
+        }
+
+        assistantMessages.append(
+            ImportedRoomAssistantMessage(role: .user, text: trimmedPrompt)
+        )
+        assistantDraft = ""
+
+        do {
+            let request = try makeAssistantRequest(prompt: trimmedPrompt)
+            assistantMessages.append(
+                ImportedRoomAssistantMessage(
+                    role: .assistant,
+                    text: """
+                    Stubbed assistant payload prepared.
+                    Prompt: \(request.prompt)
+                    Sanitized JSON size: \(request.sanitizedJSONString.count) characters.
+                    Replace this branch with your LLM call when the agent endpoint is ready.
+                    """
+                )
+            )
+        } catch {
+            assistantMessages.append(
+                ImportedRoomAssistantMessage(
+                    role: .assistant,
+                    text: "I couldn’t prepare the room context: \(error.localizedDescription)"
+                )
+            )
+        }
+    }
+
+    private func makeAssistantRequest(prompt: String) throws -> ImportedRoomAssistantRequest {
+        let updatedObjects = placedObjects.map(currentPlacement(for:))
+        let sanitizedData = try RoomJSONSanitizer.sanitizedJSONData(
+            from: baseRoomData,
+            appending: updatedObjects
+        )
+        let sanitizedJSONString = String(decoding: sanitizedData, as: UTF8.self)
+
+        return ImportedRoomAssistantRequest(
+            prompt: prompt,
+            sanitizedJSONString: sanitizedJSONString
+        )
     }
 
     private func currentPlacement(for object: PlacedFurnitureObject) -> PlacedFurnitureObject {
@@ -602,7 +667,7 @@ private struct ImportedRoomSceneView: UIViewRepresentable {
 
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 0
-            draggedNode.eulerAngles.y -= Float(rotation)
+            draggedNode.eulerAngles.x -= Float(rotation)
             SCNTransaction.commit()
         }
 

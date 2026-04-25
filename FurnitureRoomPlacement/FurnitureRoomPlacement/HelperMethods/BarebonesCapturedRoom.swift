@@ -95,6 +95,14 @@ struct FurniturePlacement: Codable {
     var scale: [Float]
 }
 
+enum RemoteUSDZModelOrientation {
+    static let previewAlignedCorrection = SCNVector3(
+        Float(-Double.pi / 2),
+        0,
+        0
+    )
+}
+
 extension FurniturePlacement {
     static let defaultPlacement = FurniturePlacement(
         position: [0, 0, 0],
@@ -449,6 +457,10 @@ enum BarebonesRoomSceneBuilder {
             let scale = 0.5 / largestDimension
             modelNode.scale = SCNVector3(scale, scale, scale)
         }
+
+        modelNode.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
+        modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
+        modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
 
         containerNode.addChildNode(modelNode)
         return containerNode
