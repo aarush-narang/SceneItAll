@@ -1,4 +1,3 @@
-from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
@@ -8,11 +7,17 @@ from google import genai
 from google.genai import types
 
 from ..config import settings
-from ..db import designs_col, furniture_col, preferences_col, chat_sessions_col
-from ..models.agent import AgentChatRequest, AgentChatResponse, PlacementSuggestion, ChatTurn
-from ..models.design import Vec3, Quat, PlacedItem
+from ..db import chat_sessions_col, designs_col, furniture_col, preferences_col
 from ..logging import log
-from ..utils.geometry import point_in_polygon, check_item_fits_in_room
+from ..models.agent import AgentChatRequest, AgentChatResponse, ChatTurn, PlacementSuggestion
+from ..models.design import (
+    FurnitureBoundingBox,
+    FurnitureFiles,
+    FurnitureSnapshot,
+    PlacedObject,
+    Placement,
+)
+from ..utils.geometry import PlacementBox, check_item_placement, derive_floor_y
 from .embeddings import embed_text
 
 _TOOLS = types.Tool(
@@ -37,7 +42,7 @@ _TOOLS = types.Tool(
         ),
         types.FunctionDeclaration(
             name="get_room_state",
-            description="Get the current state of a design room (bounding box and placed items).",
+            description="Get the current state of a design room (room geometry and placed items).",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={"design_id": types.Schema(type=types.Type.STRING)},
@@ -46,34 +51,26 @@ _TOOLS = types.Tool(
         ),
         types.FunctionDeclaration(
             name="place_item",
-            description="Place a furniture item in a design room at a given position and rotation.",
+            description=(
+                "Place a furniture item in a design room at a given position and orientation. "
+                "Position and euler_angles are 3-element [x, y, z] arrays in meters and radians."
+            ),
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
                     "design_id": types.Schema(type=types.Type.STRING),
                     "item_id": types.Schema(type=types.Type.STRING),
                     "position": types.Schema(
-                        type=types.Type.OBJECT,
-                        properties={
-                            "x": types.Schema(type=types.Type.NUMBER),
-                            "y": types.Schema(type=types.Type.NUMBER),
-                            "z": types.Schema(type=types.Type.NUMBER),
-                        },
-                        required=["x", "y", "z"],
+                        type=types.Type.ARRAY,
+                        items=types.Schema(type=types.Type.NUMBER),
                     ),
-                    "rotation": types.Schema(
-                        type=types.Type.OBJECT,
-                        properties={
-                            "x": types.Schema(type=types.Type.NUMBER),
-                            "y": types.Schema(type=types.Type.NUMBER),
-                            "z": types.Schema(type=types.Type.NUMBER),
-                            "w": types.Schema(type=types.Type.NUMBER),
-                        },
-                        required=["x", "y", "z", "w"],
+                    "euler_angles": types.Schema(
+                        type=types.Type.ARRAY,
+                        items=types.Schema(type=types.Type.NUMBER),
                     ),
                     "rationale": types.Schema(type=types.Type.STRING),
                 },
-                required=["design_id", "item_id", "position", "rotation"],
+                required=["design_id", "item_id", "position", "euler_angles"],
             ),
         ),
         types.FunctionDeclaration(
@@ -109,6 +106,9 @@ _SYSTEM_INSTRUCTION = (
 )
 
 
+# TODO(catalog-query): _search_furniture and _suggest_alternatives still use the
+# pre-migration furniture index/field layout (`text_index`, `price_usd`, etc.) —
+# revisit alongside the furniture router cleanup.
 async def _search_furniture(args: dict) -> dict:
     query = args["query"]
     category = args.get("category")
@@ -152,10 +152,12 @@ async def _get_room_state(args: dict) -> dict:
     doc = await designs_col().find_one({"_id": design_id, "deleted_at": None})
     if not doc:
         return {"error": f"Design {design_id} not found"}
+    room = doc["shell"]["room"]
     return {
-        "bbox_min": doc["shell"]["bbox_min"],
-        "bbox_max": doc["shell"]["bbox_max"],
-        "floor_polygon": doc["shell"]["floor_polygon"],
+        "room_type": room.get("type"),
+        "bounding_box": room["bounding_box"],
+        "ceiling_height": room["ceiling_height"],
+        "floor_polygon": room["floor_polygon"],
         "placed_items": doc.get("placed_items", []),
     }
 
@@ -164,7 +166,7 @@ async def _place_item(args: dict) -> dict:
     design_id = args["design_id"]
     item_id = args["item_id"]
     pos = args["position"]
-    rot = args["rotation"]
+    euler = args["euler_angles"]
     rationale = args.get("rationale", "")
 
     design_doc = await designs_col().find_one({"_id": design_id, "deleted_at": None})
@@ -175,23 +177,55 @@ async def _place_item(args: dict) -> dict:
     if not item_doc:
         return {"error": f"Furniture item {item_id} not found"}
 
-    floor_polygon = design_doc["shell"]["floor_polygon"]
-    bbox_max = design_doc["shell"]["bbox_max"]
+    bbox = item_doc.get("dimensions_bbox")
+    if not bbox:
+        return {"error": f"Furniture item {item_id} has no dimensions_bbox"}
 
-    is_valid, error_msg = check_item_fits_in_room(
-        position=pos,
-        dimensions=item_doc["dimensions"],
-        floor_polygon=floor_polygon,
-        bbox_max=bbox_max,
+    shell = design_doc["shell"]
+    room = shell["room"]
+    floor_y = derive_floor_y(shell.get("walls") or [])
+
+    others: list[PlacementBox] = []
+    for o in design_doc.get("placed_items", []):
+        op = o.get("placement") or {}
+        ob = (o.get("furniture") or {}).get("dimensions_bbox") or {}
+        if not op.get("position") or not ob:
+            continue
+        others.append(PlacementBox(
+            position=tuple(op["position"]),
+            euler_angles=tuple(op.get("euler_angles", (0.0, 0.0, 0.0))),
+            width_m=ob["width_m"],
+            height_m=ob["height_m"],
+            depth_m=ob["depth_m"],
+        ))
+
+    is_valid, error_msg = check_item_placement(
+        PlacementBox(
+            position=tuple(pos),
+            euler_angles=tuple(euler),
+            width_m=bbox["width_m"],
+            height_m=bbox["height_m"],
+            depth_m=bbox["depth_m"],
+        ),
+        floor_polygon=room["floor_polygon"],
+        ceiling_height=room["ceiling_height"],
+        floor_y=floor_y,
+        other_items=others,
     )
     if not is_valid:
         return {"error": error_msg}
 
-    placed = PlacedItem(
-        instance_id=str(uuid.uuid4()),
-        item_id=item_id,
-        position=Vec3(**pos),
-        rotation=Quat(**rot),
+    placed = PlacedObject(
+        id=str(uuid.uuid4()),
+        furniture=FurnitureSnapshot(
+            id=item_id,
+            name=item_doc["name"],
+            family_key=item_doc.get("family_key"),
+            dimensions_bbox=FurnitureBoundingBox(**bbox),
+            files=FurnitureFiles(usdz_url=item_doc["files"]["usdz_url"]),
+        ),
+        placement=Placement(position=tuple(pos), euler_angles=tuple(euler)),
+        added_at=datetime.now(timezone.utc),
         placed_by="agent",
         rationale=rationale,
     )
@@ -202,7 +236,7 @@ async def _place_item(args: dict) -> dict:
             "$set": {"updated_at": datetime.now(timezone.utc)},
         },
     )
-    return {"success": True, "instance_id": placed.instance_id}
+    return {"success": True, "id": placed.id}
 
 
 async def _get_preferences(args: dict) -> dict:
@@ -210,7 +244,6 @@ async def _get_preferences(args: dict) -> dict:
     doc = await preferences_col().find_one({"user_id": user_id})
     if not doc:
         return {"error": f"No preference profile for user {user_id}"}
-    # doc.pop("taste_vector", None)
     doc["id"] = doc.pop("_id", "")
     return doc
 
@@ -322,8 +355,8 @@ async def run_agent_chat(req: AgentChatRequest) -> AgentChatResponse:
                 placements.append(
                     PlacementSuggestion(
                         item_id=args["item_id"],
-                        position=Vec3(**args["position"]),
-                        rotation=Quat(**args["rotation"]),
+                        position=tuple(args["position"]),
+                        euler_angles=tuple(args["euler_angles"]),
                         rationale=args.get("rationale", ""),
                     )
                 )
