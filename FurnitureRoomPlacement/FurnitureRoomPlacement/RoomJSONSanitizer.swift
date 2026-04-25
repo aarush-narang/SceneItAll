@@ -87,7 +87,7 @@ final class RoomJSONSanitizer {
             rotationRadians: rounded(yaw(from: surface.transform)),
             start: rounded(segment.start),
             end: rounded(segment.end),
-            confidence: surface.confidence.numericValue
+            confidence: rounded(surface.confidence.numericValue)
         )
     }
 
@@ -110,7 +110,7 @@ final class RoomJSONSanitizer {
             rotationRadians: rounded(yaw(from: surface.transform)),
             bottomHeight: rounded(max(bottomHeight, 0)),
             isOpen: surface.category.door?.isOpen,
-            confidence: surface.confidence.numericValue
+            confidence: rounded(surface.confidence.numericValue)
         )
     }
 
