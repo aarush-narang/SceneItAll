@@ -1,0 +1,444 @@
+{
+  "metadata" : {
+    "generatedAt" : "2026-04-25T16:48:13Z",
+    "sourceVersion" : 2
+  },
+  "openings" : [
+    {
+      "bottomHeight" : 0,
+      "center" : [
+        -0.01,
+        -0.621,
+        -6.778
+      ],
+      "confidence" : 0.6,
+      "height" : 2.06,
+      "id" : "door_1",
+      "isOpen" : false,
+      "rotationRadians" : -0.877,
+      "type" : "door",
+      "wallID" : "wall_12",
+      "width" : 0.888
+    },
+    {
+      "bottomHeight" : 0,
+      "center" : [
+        3.857,
+        -0.524,
+        -0.757
+      ],
+      "confidence" : 0.9,
+      "height" : 2.256,
+      "id" : "door_2",
+      "isOpen" : false,
+      "rotationRadians" : -2.448,
+      "type" : "door",
+      "wallID" : "wall_1",
+      "width" : 1.944
+    },
+    {
+      "bottomHeight" : 0.118,
+      "center" : [
+        1.517,
+        1.559,
+        1.188
+      ],
+      "confidence" : 0.6,
+      "height" : 2.882,
+      "id" : "window_1",
+      "rotationRadians" : -2.448,
+      "type" : "window",
+      "wallID" : "wall_1",
+      "width" : 3.817
+    },
+    {
+      "bottomHeight" : 0,
+      "center" : [
+        1.608,
+        -0.371,
+        -4.83
+      ],
+      "confidence" : 0.9,
+      "height" : 2.56,
+      "id" : "opening_1",
+      "rotationRadians" : -0.877,
+      "type" : "opening",
+      "wallID" : "wall_12",
+      "width" : 2.759
+    },
+    {
+      "bottomHeight" : 0,
+      "center" : [
+        -4.083,
+        -0.531,
+        -0.342
+      ],
+      "confidence" : 0.9,
+      "height" : 2.24,
+      "id" : "opening_2",
+      "rotationRadians" : 2.226,
+      "type" : "opening",
+      "wallID" : "wall_13",
+      "width" : 1.823
+    },
+    {
+      "bottomHeight" : 0,
+      "center" : [
+        3.055,
+        -0.601,
+        -3.089
+      ],
+      "confidence" : 0.9,
+      "height" : 2.1,
+      "id" : "opening_3",
+      "rotationRadians" : -0.877,
+      "type" : "opening",
+      "wallID" : "wall_14",
+      "width" : 0.984
+    }
+  ],
+  "room" : {
+    "boundingBox" : {
+      "depth" : 8.144,
+      "width" : 9.569
+    },
+    "ceilingHeight" : 6,
+    "floorPolygon" : [
+      [
+        4.617,
+        0
+      ],
+      [
+        3.652,
+        0
+      ],
+      [
+        3.672,
+        0
+      ],
+      [
+        -2.543,
+        0
+      ],
+      [
+        -2.569,
+        0
+      ],
+      [
+        -3.526,
+        0
+      ],
+      [
+        -3.561,
+        0
+      ],
+      [
+        -4.752,
+        0
+      ],
+      [
+        -4.784,
+        0
+      ],
+      [
+        -4.789,
+        0
+      ],
+      [
+        -3.281,
+        0
+      ],
+      [
+        4.784,
+        0
+      ]
+    ],
+    "id" : "3B2DAB05-C7E1-4FCC-B49E-5390E826CEFB",
+    "story" : 0,
+    "type" : "unidentified"
+  },
+  "schemaVersion" : "1.0",
+  "units" : "meters",
+  "walls" : [
+    {
+      "center" : [
+        1.919,
+        1.349,
+        0.854
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        -1.183,
+        3.432
+      ],
+      "height" : 6,
+      "id" : "wall_1",
+      "rotationRadians" : -2.448,
+      "start" : [
+        5.021,
+        -1.724
+      ],
+      "width" : 8.066
+    },
+    {
+      "center" : [
+        5.075,
+        -0.228,
+        -4.018
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        5.914,
+        -3.009
+      ],
+      "height" : 2.846,
+      "id" : "wall_2",
+      "rotationRadians" : -0.877,
+      "start" : [
+        4.236,
+        -5.027
+      ],
+      "width" : 2.624
+    },
+    {
+      "center" : [
+        4.212,
+        0.924,
+        -2.252
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        4.507,
+        -1.897
+      ],
+      "height" : 5.15,
+      "id" : "wall_3",
+      "rotationRadians" : -0.877,
+      "start" : [
+        3.917,
+        -2.607
+      ],
+      "width" : 0.923
+    },
+    {
+      "center" : [
+        3.781,
+        -0.228,
+        -2.494
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        3.644,
+        -2.38
+      ],
+      "height" : 2.846,
+      "id" : "wall_4",
+      "rotationRadians" : -2.448,
+      "start" : [
+        3.918,
+        -2.608
+      ],
+      "width" : 0.355
+    },
+    {
+      "center" : [
+        4.616,
+        1.298,
+        -1.988
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        4.725,
+        -2.079
+      ],
+      "height" : 5.9,
+      "id" : "wall_5",
+      "rotationRadians" : 0.693,
+      "start" : [
+        4.507,
+        -1.897
+      ],
+      "width" : 0.284
+    },
+    {
+      "center" : [
+        -4.757,
+        0.174,
+        -2.01
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        -4.374,
+        -2.304
+      ],
+      "height" : 3.65,
+      "id" : "wall_6",
+      "rotationRadians" : 0.655,
+      "start" : [
+        -5.14,
+        -1.716
+      ],
+      "width" : 0.965
+    },
+    {
+      "center" : [
+        4.873,
+        1.349,
+        -1.901
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        5.02,
+        -1.724
+      ],
+      "height" : 6,
+      "id" : "wall_7",
+      "rotationRadians" : -0.877,
+      "start" : [
+        4.726,
+        -2.078
+      ],
+      "width" : 0.462
+    },
+    {
+      "center" : [
+        1.098,
+        1.349,
+        -6.193
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        1.466,
+        -6.499
+      ],
+      "height" : 6,
+      "id" : "wall_8",
+      "rotationRadians" : 0.693,
+      "start" : [
+        0.73,
+        -5.887
+      ],
+      "width" : 0.957
+    },
+    {
+      "center" : [
+        2.393,
+        -0.707,
+        -5.382
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        3.321,
+        -4.266
+      ],
+      "height" : 1.888,
+      "id" : "wall_9",
+      "rotationRadians" : -0.877,
+      "start" : [
+        1.465,
+        -6.498
+      ],
+      "width" : 2.903
+    },
+    {
+      "center" : [
+        3.779,
+        -0.228,
+        -4.647
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        4.237,
+        -5.028
+      ],
+      "height" : 2.846,
+      "id" : "wall_10",
+      "rotationRadians" : 0.693,
+      "start" : [
+        3.321,
+        -4.266
+      ],
+      "width" : 1.191
+    },
+    {
+      "center" : [
+        2.905,
+        -0.295,
+        -4.018
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        2.489,
+        -3.77
+      ],
+      "height" : 2.713,
+      "id" : "wall_11",
+      "rotationRadians" : -2.603,
+      "start" : [
+        3.321,
+        -4.266
+      ],
+      "width" : 0.968
+    },
+    {
+      "center" : [
+        0.936,
+        0.349,
+        -5.639
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        2.49,
+        -3.769
+      ],
+      "height" : 4,
+      "id" : "wall_12",
+      "rotationRadians" : -0.877,
+      "start" : [
+        -0.618,
+        -7.509
+      ],
+      "width" : 4.863
+    },
+    {
+      "center" : [
+        -3.161,
+        1.349,
+        0.858
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        -5.139,
+        -1.716
+      ],
+      "height" : 6,
+      "id" : "wall_13",
+      "rotationRadians" : 2.226,
+      "start" : [
+        -1.183,
+        3.432
+      ],
+      "width" : 6.493
+    },
+    {
+      "center" : [
+        3.067,
+        -0.295,
+        -3.075
+      ],
+      "confidence" : 0.9,
+      "end" : [
+        3.644,
+        -2.38
+      ],
+      "height" : 2.713,
+      "id" : "wall_14",
+      "rotationRadians" : -0.877,
+      "start" : [
+        2.49,
+        -3.77
+      ],
+      "width" : 1.806
+    }
+  ]
+}
