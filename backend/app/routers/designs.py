@@ -4,21 +4,9 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
 from ..db import designs_col, furniture_col
 from ..models.design import Design, DesignPublic, DesignCreateRequest, DesignPatchRequest, PlacedItem
+from ..utils.geometry import point_in_polygon, check_item_fits_in_room
 
 router = APIRouter(prefix="/designs", tags=["designs"])
-
-
-def _point_in_polygon(px: float, pz: float, polygon: list) -> bool:
-    n = len(polygon)
-    inside = False
-    j = n - 1
-    for i in range(n):
-        xi, zi = polygon[i]["x"], polygon[i]["z"]
-        xj, zj = polygon[j]["x"], polygon[j]["z"]
-        if ((zi > pz) != (zj > pz)) and (px < (xj - xi) * (pz - zi) / (zj - zi + 1e-12) + xi):
-            inside = not inside
-        j = i
-    return inside
 
 
 async def _validate_placed_item(item: PlacedItem, design_doc: dict) -> None:
@@ -27,19 +15,16 @@ async def _validate_placed_item(item: PlacedItem, design_doc: dict) -> None:
         raise HTTPException(status_code=422, detail=f"Furniture item {item.item_id} not found")
 
     floor_polygon = design_doc["shell"]["floor_polygon"]
-    if not _point_in_polygon(item.position.x, item.position.z, floor_polygon):
-        raise HTTPException(
-            status_code=422,
-            detail=f"Position ({item.position.x}, {item.position.z}) is outside the room floor polygon",
-        )
+    bbox_max = design_doc["shell"]["bbox_max"]
 
-    bbox_max_y = design_doc["shell"]["bbox_max"]["y"]
-    item_h = item_doc["dimensions"]["height_m"]
-    if item.position.y + item_h > bbox_max_y:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Item height {item_h}m at y={item.position.y} exceeds ceiling at y={bbox_max_y}",
-        )
+    is_valid, error_msg = check_item_fits_in_room(
+        position={"x": item.position.x, "y": item.position.y, "z": item.position.z},
+        dimensions=item_doc["dimensions"],
+        floor_polygon=floor_polygon,
+        bbox_max=bbox_max,
+    )
+    if not is_valid:
+        raise HTTPException(status_code=422, detail=error_msg)
 
 
 @router.get("", response_model=list[DesignPublic])

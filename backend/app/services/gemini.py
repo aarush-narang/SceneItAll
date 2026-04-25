@@ -12,6 +12,7 @@ from ..db import designs_col, furniture_col, preferences_col, chat_sessions_col
 from ..models.agent import AgentChatRequest, AgentChatResponse, PlacementSuggestion, ChatTurn
 from ..models.design import Vec3, Quat, PlacedItem
 from ..logging import log
+from ..utils.geometry import point_in_polygon, check_item_fits_in_room
 from .embeddings import embed_text
 
 _TOOLS = types.Tool(
@@ -108,20 +109,6 @@ _SYSTEM_INSTRUCTION = (
 )
 
 
-def _point_in_polygon(px: float, pz: float, polygon: list[dict]) -> bool:
-    """Ray-casting test for a 2D point (xz plane) inside a polygon."""
-    n = len(polygon)
-    inside = False
-    j = n - 1
-    for i in range(n):
-        xi, zi = polygon[i]["x"], polygon[i]["z"]
-        xj, zj = polygon[j]["x"], polygon[j]["z"]
-        if ((zi > pz) != (zj > pz)) and (px < (xj - xi) * (pz - zi) / (zj - zi + 1e-12) + xi):
-            inside = not inside
-        j = i
-    return inside
-
-
 async def _search_furniture(args: dict) -> dict:
     query = args["query"]
     category = args.get("category")
@@ -189,13 +176,16 @@ async def _place_item(args: dict) -> dict:
         return {"error": f"Furniture item {item_id} not found"}
 
     floor_polygon = design_doc["shell"]["floor_polygon"]
-    if not _point_in_polygon(pos["x"], pos["z"], floor_polygon):
-        return {"error": f"Position ({pos['x']}, {pos['z']}) is outside the room floor polygon"}
+    bbox_max = design_doc["shell"]["bbox_max"]
 
-    bbox_max_y = design_doc["shell"]["bbox_max"]["y"]
-    item_h = item_doc["dimensions"]["height_m"]
-    if pos["y"] + item_h > bbox_max_y:
-        return {"error": f"Item height {item_h}m at y={pos['y']} exceeds ceiling at y={bbox_max_y}"}
+    is_valid, error_msg = check_item_fits_in_room(
+        position=pos,
+        dimensions=item_doc["dimensions"],
+        floor_polygon=floor_polygon,
+        bbox_max=bbox_max,
+    )
+    if not is_valid:
+        return {"error": error_msg}
 
     placed = PlacedItem(
         instance_id=str(uuid.uuid4()),
