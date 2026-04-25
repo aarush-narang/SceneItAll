@@ -14,7 +14,13 @@ struct ContentView: View {
         Button(action: {
             do {
                 let sanitizedJSON = try loadSanitizedRoomPayload(fromJSONFilePath: "/Users/kelvinjou/Documents/GitHub/LAHacks2026/FurnitureRoomPlacement/FurnitureRoomPlacement/JSON_testfiles/southwest_corner.json")
-                print(sanitizedJSON)
+                
+                let jsonData = try JSONEncoder().encode(sanitizedJSON)
+//                print("sanitizedJson size: \(jsonData.count) bytes")
+
+                let byteCountFormatter = ByteCountFormatter()
+                byteCountFormatter.countStyle = .file
+                print("sanitizedJson size: \(byteCountFormatter.string(fromByteCount: Int64(jsonData.count)))")//                print(sanitizedJSON)
             } catch {
                 print(error.localizedDescription)
             }
