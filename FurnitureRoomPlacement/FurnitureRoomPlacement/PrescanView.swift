@@ -232,20 +232,15 @@ private struct ImportedRoomShellView: View {
                 }
             }
             .sheet(isPresented: $showFurnitureCatalog) {
-                List(
-                    furnitureAssets.sorted(by: { $0.key < $1.key }),
-                    id: \.key
-                ) { asset in
-                    Button(asset.key) {
-                        let addSuccess = BarebonesRoomSceneBuilder.overlayExternalUSDZ(on: scene, add: asset.value)
-                        if addSuccess {
-                            print("Successfully added: \(asset.key)")
-                            showFurnitureCatalog = false
-                            hasOverlayedExternalUSDZ = true
-                        }
-                    }
+                NavigationStack {
+                    FurnitureCatalogListView(
+                        showFurnitureCatalog: $showFurnitureCatalog,
+                        hasOverlayedExternalUSDZ: $hasOverlayedExternalUSDZ,
+                        scene: scene
+                    )
                 }
-                .presentationDetents([.medium])
+                .presentationDetents([.fraction(0.92), .large])
+                .presentationDragIndicator(.visible)
             }
         }
     }

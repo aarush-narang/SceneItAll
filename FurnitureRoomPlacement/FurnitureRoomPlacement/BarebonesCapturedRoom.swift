@@ -91,6 +91,11 @@ enum BarebonesRoomSceneBuilder {
         addExternalUSDZ(to: scene.rootNode, USDZFileName: USDZFileName)
     }
 
+    @discardableResult
+    static func overlayExternalUSDZ(on scene: SCNScene, fileURL: URL) -> Bool {
+        addExternalUSDZ(to: scene.rootNode, fileURL: fileURL)
+    }
+
     private static func addSurfaces(
         _ surfaces: [CapturedRoom.Surface],
         kind: SurfaceKind,
@@ -130,6 +135,20 @@ enum BarebonesRoomSceneBuilder {
         return true
     }
 
+    @discardableResult
+    private static func addExternalUSDZ(to rootNode: SCNNode, fileURL: URL) -> Bool {
+        guard let importedNode = loadExternalUSDZNode(fileURL: fileURL) else {
+            return false
+        }
+
+        let placedNode = normalizedImportedNode(from: importedNode)
+        placedNode.position = placementPosition(in: rootNode)
+        applyRenderingOrder(1000, to: placedNode)
+        placedNode.name = "external-usdz-overlay-\(UUID())"
+        rootNode.addChildNode(placedNode)
+        return true
+    }
+
     private static func loadExternalUSDZNode(named assetName: String) -> SCNNode? {
         if let url = Bundle.main.url(forResource: assetName, withExtension: "usdz"),
            let scene = try? SCNScene(url: url, options: nil),
@@ -144,6 +163,14 @@ enum BarebonesRoomSceneBuilder {
         }
 
         return nil
+    }
+
+    private static func loadExternalUSDZNode(fileURL: URL) -> SCNNode? {
+        guard let scene = try? SCNScene(url: fileURL, options: nil) else {
+            return nil
+        }
+
+        return importedContentNode(from: scene)
     }
 
     private static func bundledUSDZURL(fromDataAssetNamed assetName: String) -> URL? {

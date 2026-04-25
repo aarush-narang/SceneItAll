@@ -1,0 +1,106 @@
+{
+  "_id": "00165213",
+  "name": "URBAN Junior chair - white",
+  "family_key": "URBAN Junior chair",
+  "source": {
+    "name": "ikea",
+    "url": "https://www.ikea.com/us/en/p/urban-junior-chair-white-00165213/"
+  },
+  "taxonomy_ikea": {
+    "category_leaf": "Junior dining chairs",
+    "category_path": [
+      "Products",
+      "Baby & kids",
+      "Kids",
+      "Kids furniture",
+      "Junior dining chairs"
+    ],
+    "segment": "other",
+    "top_department": "Baby & kids",
+    "material": "Plastic",
+    "color": "white"
+  },
+  "taxonomy_inferred": {
+    "category": "chair",
+    "subcategory": "junior_dining_chair"
+  },
+  "price": {
+    "value": 59.99,
+    "currency": "USD"
+  },
+  "rating": {
+    "value": 4.7,
+    "count": 941
+  },
+  "dimensions_ikea": {
+    "width_in": 17.75,
+    "depth_in": 18.875,
+    "height_in": 31.125
+  },
+  "dimensions_bbox": {
+    "width_m": 0.4473,
+    "height_m": 0.799,
+    "depth_m": 0.4804
+  },
+  "attributes": {
+    "style_tags": [
+      "contemporary",
+      "minimalist",
+      "scandinavian",
+      "practical"
+    ],
+    "design_lineage": "Modern functional design with a minimalist aesthetic, emphasizing clean lines and ease of use.",
+    "material_primary": "Plastic",
+    "texture_and_finish": "smooth matte white plastic",
+    "color_primary": "white",
+    "era": "contemporary",
+    "formality": "casual",
+    "ambient_mood": [
+      "clean",
+      "practical",
+      "bright",
+      "inviting"
+    ],
+    "visual_weight": "light",
+    "scale": "small",
+    "room_role": "utility",
+    "suitable_rooms": [
+      "dining_room",
+      "kitchen",
+      "kids_room"
+    ],
+    "placement_hints": [
+      "against_dining_table",
+      "freestanding"
+    ],
+    "pairs_well_with": [
+      "dining_table",
+      "kids_dinnerware",
+      "washable_area_rug",
+      "simple_placemat"
+    ],
+    "use_scenarios": [
+      "family_dining",
+      "kids_play_area",
+      "everyday_kitchen_use",
+      "compact_dining_space"
+    ],
+    "space_requirements": "Designed to fit standard dining tables, it can be stacked for efficient storage, making it suitable for compact living spaces.",
+    "has_arms": false,
+    "has_legs": true,
+    "stackable": true
+  },
+  "design_summary": "A sleek, white plastic junior chair with a clean, integrated silhouette, designed to bring a child comfortably to a standard dining table.",
+  "description": "This junior chair features a streamlined, single-piece silhouette with gently curved lines, offering a visually light and airy presence in any dining space. Crafted from smooth, matte white plastic, its surface is both tactilely pleasant and exceptionally easy to maintain, ensuring durability and hygiene. It functions as a dedicated utility piece, perfectly proportioned to elevate a child to the height of a standard dining table without overwhelming the room. This chair supports a clean, practical, and inviting atmosphere, making it ideal for busy kitchens or casual dining areas. It pairs beautifully with a light-toned wooden dining table, providing a bright contrast and functional seating solution for young diners.",
+  "embedding_text": "URBAN Junior chair - white \u2014 a junior dining chair (chair). A sleek, white plastic junior chair with a clean, integrated silhouette, designed to bring a child comfortably to a standard dining table.\n\nThis junior chair features a streamlined, single-piece silhouette with gently curved lines, offering a visually light and airy presence in any dining space. Crafted from smooth, matte white plastic, its surface is both tactilely pleasant and exceptionally easy to maintain, ensuring durability and hygiene. It functions as a dedicated utility piece, perfectly proportioned to elevate a child to the height of a standard dining table without overwhelming the room. This chair supports a clean, practical, and inviting atmosphere, making it ideal for busy kitchens or casual dining areas. It pairs beautifully with a light-toned wooden dining table, providing a bright contrast and functional seating solution for young diners.\n\nDesign: Style: contemporary, minimalist, scandinavian, practical; contemporary era; casual register; Modern functional design with a minimalist aesthetic, emphasizing clean lines and ease of use.\n\nMaterial & finish: smooth matte white plastic; primarily Plastic; in white.\n\nPresence: light visual weight; small footprint; functions as utility in a room; mood: clean, practical, bright, inviting.\n\nSpatial fit: suits dining room, kitchen, kids room; typically placed against dining table, freestanding; Designed to fit standard dining tables, it can be stacked for efficient storage, making it suitable for compact living spaces.\n\nPairs well with: dining table, kids dinnerware, washable area rug, simple placemat.\n\nCommon uses: family dining, kids play area, everyday kitchen use, compact dining space.",
+
+  "files": {
+    "usdz_url": "https://pub-b66f445ca2e347c899bad6d719ed429f.r2.dev/usdz-objects/00165213.usdz",
+    "thumb_urls": [
+      "https://pub-b66f445ca2e347c899bad6d719ed429f.r2.dev/thumbnails/00165213/0.jpg",
+      "https://pub-b66f445ca2e347c899bad6d719ed429f.r2.dev/thumbnails/00165213/1.jpg",
+      "https://pub-b66f445ca2e347c899bad6d719ed429f.r2.dev/thumbnails/00165213/2.jpg",
+      "https://pub-b66f445ca2e347c899bad6d719ed429f.r2.dev/thumbnails/00165213/3.jpg"
+    ]
+  }
+}
