@@ -18,6 +18,119 @@ import RoomPlan
 import SceneKit
 import UIKit
 
+struct SavedFurnitureSnapshot: Codable {
+    let id: String
+    let name: String
+    let familyKey: String
+    let dimensionsBbox: DimensionsBbox
+    let files: SavedFurnitureFiles
+
+    enum CodingKeys: String, CodingKey {
+        case id = "_id"
+        case name
+        case familyKey = "family_key"
+        case dimensionsBbox = "dimensions_bbox"
+        case files
+    }
+}
+
+struct SavedFurnitureFiles: Codable {
+    let usdzURL: String
+
+    enum CodingKeys: String, CodingKey {
+        case usdzURL = "usdz_url"
+    }
+}
+
+struct PlacedFurnitureObject: Codable, Identifiable {
+    let id: String
+    let furniture: Furniture
+    var placement: FurniturePlacement
+    let addedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case furniture
+        case placement
+        case addedAt
+    }
+
+    init(
+        id: String,
+        furniture: Furniture,
+        placement: FurniturePlacement,
+        addedAt: String
+    ) {
+        self.id = id
+        self.furniture = furniture
+        self.placement = placement
+        self.addedAt = addedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        placement = try container.decode(FurniturePlacement.self, forKey: .placement)
+        addedAt = try container.decode(String.self, forKey: .addedAt)
+
+        if let savedFurniture = try? container.decode(SavedFurnitureSnapshot.self, forKey: .furniture) {
+            furniture = Furniture(savedSnapshot: savedFurniture)
+        } else {
+            furniture = try container.decode(Furniture.self, forKey: .furniture)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(furniture.savedSnapshot, forKey: .furniture)
+        try container.encode(placement, forKey: .placement)
+        try container.encode(addedAt, forKey: .addedAt)
+    }
+}
+
+struct FurniturePlacement: Codable {
+    var position: [Float]
+    var eulerAngles: [Float]
+    var scale: [Float]
+}
+
+extension FurniturePlacement {
+    static let defaultPlacement = FurniturePlacement(
+        position: [0, 0, 0],
+        eulerAngles: [0, 0, 0],
+        scale: [1, 1, 1]
+    )
+
+    @MainActor
+    init(from node: SCNNode) {
+        self = FurniturePlacement(
+            position: [node.position.x, node.position.y, node.position.z],
+            eulerAngles: [node.eulerAngles.x, node.eulerAngles.y, node.eulerAngles.z],
+            scale: [node.scale.x, node.scale.y, node.scale.z]
+        )
+    }
+
+    @MainActor
+    func apply(to node: SCNNode) {
+        node.position = SCNVector3(
+            position.count > 0 ? position[0] : 0,
+            position.count > 1 ? position[1] : 0,
+            position.count > 2 ? position[2] : 0
+        )
+        node.eulerAngles = SCNVector3(
+            eulerAngles.count > 0 ? eulerAngles[0] : 0,
+            eulerAngles.count > 1 ? eulerAngles[1] : 0,
+            eulerAngles.count > 2 ? eulerAngles[2] : 0
+        )
+        node.scale = SCNVector3(
+            scale.count > 0 ? scale[0] : 1,
+            scale.count > 1 ? scale[1] : 1,
+            scale.count > 2 ? scale[2] : 1
+        )
+    }
+}
+
 @available(iOS 17.0, *)
 struct BarebonesCapturedRoom: Codable {
     let identifier: UUID
@@ -29,6 +142,45 @@ struct BarebonesCapturedRoom: Codable {
     let openings: [CapturedRoom.Surface]
     let floors: [CapturedRoom.Surface]
     let sections: [CapturedRoom.Section]
+    let objects: [PlacedFurnitureObject]
+
+    init(
+        identifier: UUID,
+        story: Int,
+        version: Int,
+        walls: [CapturedRoom.Surface],
+        doors: [CapturedRoom.Surface],
+        windows: [CapturedRoom.Surface],
+        openings: [CapturedRoom.Surface],
+        floors: [CapturedRoom.Surface],
+        sections: [CapturedRoom.Section],
+        objects: [PlacedFurnitureObject] = []
+    ) {
+        self.identifier = identifier
+        self.story = story
+        self.version = version
+        self.walls = walls
+        self.doors = doors
+        self.windows = windows
+        self.openings = openings
+        self.floors = floors
+        self.sections = sections
+        self.objects = objects
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        identifier = try container.decode(UUID.self, forKey: .identifier)
+        story = try container.decode(Int.self, forKey: .story)
+        version = try container.decode(Int.self, forKey: .version)
+        walls = try container.decode([CapturedRoom.Surface].self, forKey: .walls)
+        doors = try container.decode([CapturedRoom.Surface].self, forKey: .doors)
+        windows = try container.decode([CapturedRoom.Surface].self, forKey: .windows)
+        openings = try container.decode([CapturedRoom.Surface].self, forKey: .openings)
+        floors = try container.decode([CapturedRoom.Surface].self, forKey: .floors)
+        sections = try container.decode([CapturedRoom.Section].self, forKey: .sections)
+        objects = try container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects) ?? []
+    }
 }
 
 struct LegacyBarebonesCapturedRoom: Codable {
@@ -37,6 +189,33 @@ struct LegacyBarebonesCapturedRoom: Codable {
     let doors: [CapturedRoom.Surface]
     let windows: [CapturedRoom.Surface]
     let openings: [CapturedRoom.Surface]
+    let objects: [PlacedFurnitureObject]
+
+    init(
+        identifier: UUID,
+        walls: [CapturedRoom.Surface],
+        doors: [CapturedRoom.Surface],
+        windows: [CapturedRoom.Surface],
+        openings: [CapturedRoom.Surface],
+        objects: [PlacedFurnitureObject] = []
+    ) {
+        self.identifier = identifier
+        self.walls = walls
+        self.doors = doors
+        self.windows = windows
+        self.openings = openings
+        self.objects = objects
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        identifier = try container.decode(UUID.self, forKey: .identifier)
+        walls = try container.decode([CapturedRoom.Surface].self, forKey: .walls)
+        doors = try container.decode([CapturedRoom.Surface].self, forKey: .doors)
+        windows = try container.decode([CapturedRoom.Surface].self, forKey: .windows)
+        openings = try container.decode([CapturedRoom.Surface].self, forKey: .openings)
+        objects = try container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects) ?? []
+    }
 }
 
 enum BarebonesRoomSceneBuilder {
@@ -87,8 +266,29 @@ enum BarebonesRoomSceneBuilder {
     }
 
     @discardableResult
-    static func overlayExternalUSDZ(on scene: SCNScene, add USDZFileName: String) -> Bool {
-        addExternalUSDZ(to: scene.rootNode, USDZFileName: USDZFileName)
+    static func overlayExternalUSDZ(
+        on scene: SCNScene,
+        add USDZFileName: String,
+        overlayIdentifier: String = UUID().uuidString
+    ) -> Bool {
+        addExternalUSDZ(
+            to: scene.rootNode,
+            USDZFileName: USDZFileName,
+            overlayIdentifier: overlayIdentifier
+        )
+    }
+
+    @discardableResult
+    static func overlayExternalUSDZ(
+        on scene: SCNScene,
+        fileURL: URL,
+        overlayIdentifier: String = UUID().uuidString
+    ) -> Bool {
+        addExternalUSDZ(
+            to: scene.rootNode,
+            fileURL: fileURL,
+            overlayIdentifier: overlayIdentifier
+        )
     }
 
     private static func addSurfaces(
@@ -117,7 +317,11 @@ enum BarebonesRoomSceneBuilder {
     }
 
     @discardableResult
-    private static func addExternalUSDZ(to rootNode: SCNNode, USDZFileName: String) -> Bool {
+    private static func addExternalUSDZ(
+        to rootNode: SCNNode,
+        USDZFileName: String,
+        overlayIdentifier: String
+    ) -> Bool {
         guard let importedNode = loadExternalUSDZNode(named: USDZFileName) else {
             return false
         }
@@ -125,9 +329,31 @@ enum BarebonesRoomSceneBuilder {
         let placedNode = normalizedImportedNode(from: importedNode)
         placedNode.position = placementPosition(in: rootNode)
         applyRenderingOrder(1000, to: placedNode)
-        placedNode.name = "external-usdz-overlay-\(UUID())"
+        placedNode.name = overlayNodeName(for: overlayIdentifier)
         rootNode.addChildNode(placedNode)
         return true
+    }
+
+    @discardableResult
+    private static func addExternalUSDZ(
+        to rootNode: SCNNode,
+        fileURL: URL,
+        overlayIdentifier: String
+    ) -> Bool {
+        guard let importedNode = loadExternalUSDZNode(fileURL: fileURL) else {
+            return false
+        }
+
+        let placedNode = normalizedImportedNode(from: importedNode)
+        placedNode.position = placementPosition(in: rootNode)
+        applyRenderingOrder(1000, to: placedNode)
+        placedNode.name = overlayNodeName(for: overlayIdentifier)
+        rootNode.addChildNode(placedNode)
+        return true
+    }
+
+    static func overlayNodeName(for identifier: String) -> String {
+        "external-usdz-overlay-\(identifier)"
     }
 
     private static func loadExternalUSDZNode(named assetName: String) -> SCNNode? {
@@ -144,6 +370,14 @@ enum BarebonesRoomSceneBuilder {
         }
 
         return nil
+    }
+
+    private static func loadExternalUSDZNode(fileURL: URL) -> SCNNode? {
+        guard let scene = try? SCNScene(url: fileURL, options: nil) else {
+            return nil
+        }
+
+        return importedContentNode(from: scene)
     }
 
     private static func bundledUSDZURL(fromDataAssetNamed assetName: String) -> URL? {
@@ -458,6 +692,20 @@ enum BarebonesRoomImportLoader {
 
         throw BarebonesImportError.unsupportedFile
     }
+
+    static func loadPlacedObjects(from data: Data) throws -> [PlacedFurnitureObject] {
+        let decoder = JSONDecoder()
+
+        if #available(iOS 17.0, *), let room = try? decoder.decode(BarebonesCapturedRoom.self, from: data) {
+            return room.objects
+        }
+
+        if let room = try? decoder.decode(LegacyBarebonesCapturedRoom.self, from: data) {
+            return room.objects
+        }
+
+        throw BarebonesImportError.unsupportedFile
+    }
 }
 
 enum BarebonesRoomJSONSanitizer {
@@ -470,7 +718,8 @@ enum BarebonesRoomJSONSanitizer {
         "windows",
         "openings",
         "floors",
-        "sections"
+        "sections",
+        "objects"
     ]
 
     static func stripToEssentialSurfaces(from data: Data) throws -> Data {
@@ -504,9 +753,60 @@ enum BarebonesRoomJSONSanitizer {
         normalizedRoom["openings"] = strippedRoom["openings"] ?? []
         normalizedRoom["floors"] = strippedRoom["floors"] ?? []
         normalizedRoom["sections"] = strippedRoom["sections"] ?? []
+        normalizedRoom["objects"] = []
 
         return try JSONSerialization.data(
             withJSONObject: normalizedRoom,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+    }
+
+    static func normalizedRoomData(from data: Data) throws -> Data {
+        let jsonObject = try JSONSerialization.jsonObject(with: data)
+
+        guard var roomDictionary = jsonObject as? [String: Any] else {
+            throw BarebonesImportError.unsupportedFile
+        }
+
+        guard roomDictionary["walls"] != nil
+            || roomDictionary["doors"] != nil
+            || roomDictionary["windows"] != nil
+            || roomDictionary["openings"] != nil
+            || roomDictionary["floors"] != nil else {
+            throw BarebonesImportError.unsupportedFile
+        }
+
+        roomDictionary["identifier"] = roomDictionary["identifier"] ?? UUID().uuidString
+        roomDictionary["story"] = roomDictionary["story"] ?? 0
+        roomDictionary["version"] = roomDictionary["version"] ?? 1
+        roomDictionary["walls"] = roomDictionary["walls"] ?? []
+        roomDictionary["doors"] = roomDictionary["doors"] ?? []
+        roomDictionary["windows"] = roomDictionary["windows"] ?? []
+        roomDictionary["openings"] = roomDictionary["openings"] ?? []
+        roomDictionary["floors"] = roomDictionary["floors"] ?? []
+        roomDictionary["sections"] = roomDictionary["sections"] ?? []
+        roomDictionary["objects"] = roomDictionary["objects"] ?? []
+
+        return try JSONSerialization.data(
+            withJSONObject: roomDictionary,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+    }
+
+    static func roomData(byUpdatingObjects objects: [PlacedFurnitureObject], in data: Data) throws -> Data {
+        let normalizedData = try normalizedRoomData(from: data)
+        let jsonObject = try JSONSerialization.jsonObject(with: normalizedData)
+
+        guard var roomDictionary = jsonObject as? [String: Any] else {
+            throw BarebonesImportError.unsupportedFile
+        }
+
+        let objectsData = try JSONEncoder().encode(objects)
+        let encodedObjects = try JSONSerialization.jsonObject(with: objectsData)
+        roomDictionary["objects"] = encodedObjects
+
+        return try JSONSerialization.data(
+            withJSONObject: roomDictionary,
             options: [.prettyPrinted, .sortedKeys]
         )
     }
