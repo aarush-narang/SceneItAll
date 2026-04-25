@@ -156,13 +156,13 @@ struct FurnitureDetailView: View {
         )
         .frame(height: 360)
         .background(
-            Color(uiColor: .tertiarySystemGroupedBackground),
+            Color.black,
             in: RoundedRectangle(cornerRadius: 30, style: .continuous)
         )
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(Color.white.opacity(0.22), lineWidth: 0.75)
+                .stroke(Color.white.opacity(0.16), lineWidth: 0.75)
         }
         .overlay {
             switch previewState {
@@ -299,7 +299,7 @@ private enum FurnitureDetailError: LocalizedError {
 
 private func makePreviewScene() -> SCNScene {
     let scene = SCNScene()
-    scene.background.contents = UIColor.clear
+    scene.background.contents = UIColor.black
 
     let cameraNode = SCNNode()
     cameraNode.camera = SCNCamera()
