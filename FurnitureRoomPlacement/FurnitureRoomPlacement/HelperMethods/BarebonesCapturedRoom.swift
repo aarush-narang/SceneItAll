@@ -583,11 +583,11 @@ enum BarebonesRoomSceneBuilder {
             return false
         }
 
-        let placedNode = normalizedImportedNode(from: importedNode)
-        placedNode.position = placementPosition(in: rootNode)
-        applyRenderingOrder(1000, to: placedNode)
-        placedNode.name = overlayNodeName(for: overlayIdentifier)
-        rootNode.addChildNode(placedNode)
+        let imported = normalizedImportedNode(from: importedNode)
+        imported.node.position = floorAlignedPlacementPosition(halfHeight: imported.halfHeight, in: rootNode)
+        applyRenderingOrder(1000, to: imported.node)
+        imported.node.name = overlayNodeName(for: overlayIdentifier)
+        rootNode.addChildNode(imported.node)
         return true
     }
 
@@ -601,12 +601,24 @@ enum BarebonesRoomSceneBuilder {
             return false
         }
 
-        let placedNode = normalizedImportedNode(from: importedNode)
-        placedNode.position = placementPosition(in: rootNode)
-        applyRenderingOrder(1000, to: placedNode)
-        placedNode.name = overlayNodeName(for: overlayIdentifier)
-        rootNode.addChildNode(placedNode)
+        let imported = normalizedImportedNode(from: importedNode)
+        imported.node.position = floorAlignedPlacementPosition(halfHeight: imported.halfHeight, in: rootNode)
+        applyRenderingOrder(1000, to: imported.node)
+        imported.node.name = overlayNodeName(for: overlayIdentifier)
+        rootNode.addChildNode(imported.node)
         return true
+    }
+
+    /// Initial drop position for a manually-placed item: room-center xz, with y
+    /// raised by the model's half-height so the bottom sits on the floor.
+    /// `normalizedImportedNode` pivots each container at the rotated geometric
+    /// center, so lifting by `halfHeight` puts the AABB bottom at floor y.
+    private static func floorAlignedPlacementPosition(
+        halfHeight: Float,
+        in rootNode: SCNNode
+    ) -> SCNVector3 {
+        let base = placementPosition(in: rootNode)
+        return SCNVector3(base.x, base.y + halfHeight, base.z)
     }
 
     static func overlayNodeName(for identifier: String) -> String {
@@ -682,7 +694,17 @@ enum BarebonesRoomSceneBuilder {
         return false
     }
 
-    private static func normalizedImportedNode(from node: SCNNode) -> SCNNode {
+    /// Result of importing a remote USDZ: the placement-ready container plus the
+    /// rotated, scaled half-height of its geometry. We surface `halfHeight`
+    /// explicitly because `SCNNode.boundingBox` only reports the node's *own*
+    /// geometry — for our empty container that is always (0,0,0)..(0,0,0), so
+    /// callers can't recover the model height from the returned node alone.
+    struct NormalizedImport {
+        let node: SCNNode
+        let halfHeight: Float
+    }
+
+    private static func normalizedImportedNode(from node: SCNNode) -> NormalizedImport {
         let containerNode = SCNNode()
         let modelNode = node.clone()
 
@@ -692,10 +714,32 @@ enum BarebonesRoomSceneBuilder {
         modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
         modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
 
-        // Read the post-rotation AABB at scale = 1 by asking the container,
-        // which composes the child's transform into its own local frame.
-        containerNode.addChildNode(modelNode)
-        let (rotatedMin, rotatedMax) = containerNode.boundingBox
+        // Compute the rotated AABB by transforming each of the geometry's
+        // 8 corners through modelNode's current transform (rotation only at
+        // this point; scale/position are still defaults). We use the model's
+        // own geometry box since `containerNode.boundingBox` would be empty.
+        let (geomMin, geomMax) = modelNode.boundingBox
+        let corners: [SCNVector3] = [
+            SCNVector3(geomMin.x, geomMin.y, geomMin.z),
+            SCNVector3(geomMin.x, geomMin.y, geomMax.z),
+            SCNVector3(geomMin.x, geomMax.y, geomMin.z),
+            SCNVector3(geomMin.x, geomMax.y, geomMax.z),
+            SCNVector3(geomMax.x, geomMin.y, geomMin.z),
+            SCNVector3(geomMax.x, geomMin.y, geomMax.z),
+            SCNVector3(geomMax.x, geomMax.y, geomMin.z),
+            SCNVector3(geomMax.x, geomMax.y, geomMax.z),
+        ]
+        let rotation = SCNMatrix4MakeRotation(
+            modelNode.eulerAngles.x, 1, 0, 0
+        )
+        var rotatedMin = SCNVector3(Float.infinity, Float.infinity, Float.infinity)
+        var rotatedMax = SCNVector3(-Float.infinity, -Float.infinity, -Float.infinity)
+        for corner in corners {
+            let r = transformPoint(corner, by: rotation)
+            rotatedMin.x = min(rotatedMin.x, r.x); rotatedMax.x = max(rotatedMax.x, r.x)
+            rotatedMin.y = min(rotatedMin.y, r.y); rotatedMax.y = max(rotatedMax.y, r.y)
+            rotatedMin.z = min(rotatedMin.z, r.z); rotatedMax.z = max(rotatedMax.z, r.z)
+        }
 
         // Sanity-clamp absurdly large or tiny imports (rare for IKEA, kept as a guard).
         let largestDimension = max(
@@ -725,7 +769,21 @@ enum BarebonesRoomSceneBuilder {
         modelNode.position.y = -centerY
         modelNode.position.z = -centerZ
 
-        return containerNode
+        containerNode.addChildNode(modelNode)
+
+        let halfHeight = (rotatedMax.y - rotatedMin.y) * scaleFactor / 2
+        return NormalizedImport(node: containerNode, halfHeight: halfHeight)
+    }
+
+    /// Transforms a point by a 4x4 (treating it as a position with w=1).
+    /// SceneKit stores SCNMatrix4 in column-major order with `mij` denoting
+    /// row i, column j (1-indexed), so the multiply expands as below.
+    private static func transformPoint(_ p: SCNVector3, by m: SCNMatrix4) -> SCNVector3 {
+        return SCNVector3(
+            m.m11 * p.x + m.m21 * p.y + m.m31 * p.z + m.m41,
+            m.m12 * p.x + m.m22 * p.y + m.m32 * p.z + m.m42,
+            m.m13 * p.x + m.m23 * p.y + m.m33 * p.z + m.m43
+        )
     }
 
     private static func placementPosition(in rootNode: SCNNode) -> SCNVector3 {
