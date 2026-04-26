@@ -59,7 +59,7 @@ async def find_empty_zones(
     polygon = shell["room"]["floor_polygon"]
 
     other_corners: list[list[tuple[float, float]]] = []
-    for o in design.get("placed_items", []):
+    for o in design.get("objects", []):
         placement = o.get("placement") or {}
         bbox = (o.get("furniture") or {}).get("dimensions_bbox") or {}
         pos = placement.get("position")

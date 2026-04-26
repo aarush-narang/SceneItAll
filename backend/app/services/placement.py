@@ -62,10 +62,10 @@ def _forbidden_zones_for(shell: dict) -> list[tuple[str, list[tuple[float, float
 
 
 def _other_items(
-    placed_items: Iterable[dict], exclude_id: str | None
+    objects: Iterable[dict], exclude_id: str | None
 ) -> list[PlacementBox]:
     out: list[PlacementBox] = []
-    for o in placed_items:
+    for o in objects:
         if exclude_id is not None and o.get("id") == exclude_id:
             continue
         box = _placement_box_from_doc(o)
@@ -96,7 +96,7 @@ async def validate_placement(
     shell = design_doc["shell"]
     room = shell["room"]
     floor_y = derive_floor_y(shell.get("walls") or [])
-    others = _other_items(design_doc.get("placed_items") or [], exclude_id=item.id)
+    others = _other_items(design_doc.get("objects") or [], exclude_id=item.id)
     forbidden = _forbidden_zones_for(shell)
 
     return check_item_placement(

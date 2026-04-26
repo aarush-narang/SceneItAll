@@ -23,7 +23,7 @@ class SwapStyleInput(BaseModel):
     instance_ids: list[str] = Field(
         default_factory=list,
         description=(
-            "Optional subset of placed_items.id to swap. Empty = swap every "
+            "Optional subset of objects.id to swap. Empty = swap every "
             "placed item in the design."
         ),
     )
@@ -84,7 +84,7 @@ async def _find_replacement(
 )
 async def swap_style(ctx: AgentContext, inp: SwapStyleInput) -> SwapStyleOutput:
     design = await ctx.load_design()
-    placed = design.get("placed_items", []) or []
+    placed = design.get("objects", []) or []
     targets = (
         set(inp.instance_ids) if inp.instance_ids else {p["id"] for p in placed}
     )
@@ -137,12 +137,12 @@ async def swap_style(ctx: AgentContext, inp: SwapStyleInput) -> SwapStyleOutput:
             continue
 
         await designs_col().update_one(
-            {"_id": ctx.design_id, "placed_items.id": item["id"]},
+            {"_id": ctx.design_id, "objects.id": item["id"]},
             {
                 "$set": {
-                    "placed_items.$.furniture": new_snapshot,
-                    "placed_items.$.placed_by": "agent",
-                    "placed_items.$.rationale": f"Style-swapped to {inp.target_style}",
+                    "objects.$.furniture": new_snapshot,
+                    "objects.$.placed_by": "agent",
+                    "objects.$.rationale": f"Style-swapped to {inp.target_style}",
                     "updated_at": datetime.now(timezone.utc),
                 }
             },

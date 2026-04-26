@@ -36,7 +36,7 @@ async def create_design(body: DesignCreateRequest):
         "name": body.name,
         "preference_profile_id": body.preference_profile_id,
         "shell": body.shell.model_dump(),
-        "placed_items": [item.model_dump() for item in body.placed_items],
+        "objects": [item.model_dump() for item in body.objects],
         "created_at": now,
         "updated_at": now,
         "deleted_at": None,
@@ -51,6 +51,16 @@ async def get_design(id: str):
     if not doc:
         raise HTTPException(status_code=404, detail=f"Design {id} not found")
     return DesignPublic.from_doc(doc)
+
+
+@router.get("/{id}/objects", response_model=list[PlacedObject])
+async def list_design_objects(id: str):
+    doc = await designs_col().find_one(
+        {"_id": id, "deleted_at": None}, {"objects": 1}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Design {id} not found")
+    return [PlacedObject.model_validate(o) for o in doc.get("objects") or []]
 
 
 @router.patch("/{id}", response_model=DesignPublic)
@@ -74,20 +84,20 @@ async def patch_design(id: str, body: DesignPatchRequest):
     ops: dict = {"$set": update_set}
     if body.add_items:
         ops["$push"] = {
-            "placed_items": {"$each": [i.model_dump() for i in body.add_items]}
+            "objects": {"$each": [i.model_dump() for i in body.add_items]}
         }
     await col.update_one({"_id": id}, ops)
 
     if body.delete_instance_ids:
         await col.update_one(
             {"_id": id},
-            {"$pull": {"placed_items": {"id": {"$in": body.delete_instance_ids}}}},
+            {"$pull": {"objects": {"id": {"$in": body.delete_instance_ids}}}},
         )
 
     for item in body.update_items:
         await col.update_one(
-            {"_id": id, "placed_items.id": item.id},
-            {"$set": {"placed_items.$": item.model_dump()}},
+            {"_id": id, "objects.id": item.id},
+            {"$set": {"objects.$": item.model_dump()}},
         )
 
     updated = await col.find_one({"_id": id})

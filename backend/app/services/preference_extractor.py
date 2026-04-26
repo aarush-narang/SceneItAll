@@ -10,10 +10,10 @@ async def extract_from_design(design: Design) -> dict:
     material_preferences) by aggregating the placed items'
     catalog metadata and visual embeddings.
     """
-    if not design.placed_items:
+    if not design.objects:
         return {}
 
-    item_ids = [pi.item_id for pi in design.placed_items]
+    item_ids = [pi.furniture.id for pi in design.objects]
     col = furniture_col()
     docs = await col.find({"_id": {"$in": item_ids}}).to_list(length=None)
 

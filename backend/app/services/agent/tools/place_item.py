@@ -94,7 +94,7 @@ async def place_item(ctx: AgentContext, inp: PlaceItemInput) -> PlaceItemOutput:
     await designs_col().update_one(
         {"_id": ctx.design_id},
         {
-            "$push": {"placed_items": placed.model_dump()},
+            "$push": {"objects": placed.model_dump()},
             "$set": {"updated_at": datetime.now(timezone.utc)},
         },
     )

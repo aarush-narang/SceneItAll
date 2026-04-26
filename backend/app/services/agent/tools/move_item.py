@@ -48,7 +48,7 @@ async def move_item(ctx: AgentContext, inp: MoveItemInput) -> MoveItemOutput:
 
     design = await ctx.load_design()
     existing = next(
-        (p for p in design.get("placed_items", []) if p.get("id") == inp.instance_id),
+        (p for p in design.get("objects", []) if p.get("id") == inp.instance_id),
         None,
     )
     if existing is None:
@@ -65,10 +65,10 @@ async def move_item(ctx: AgentContext, inp: MoveItemInput) -> MoveItemOutput:
         raise ValueError(err)
 
     await designs_col().update_one(
-        {"_id": ctx.design_id, "placed_items.id": inp.instance_id},
+        {"_id": ctx.design_id, "objects.id": inp.instance_id},
         {
             "$set": {
-                "placed_items.$": updated.model_dump(),
+                "objects.$": updated.model_dump(),
                 "updated_at": datetime.now(timezone.utc),
             }
         },
