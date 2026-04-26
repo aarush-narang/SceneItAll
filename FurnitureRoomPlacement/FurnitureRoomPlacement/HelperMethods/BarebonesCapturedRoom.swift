@@ -685,14 +685,12 @@ enum BarebonesRoomSceneBuilder {
     private static func normalizedImportedNode(from node: SCNNode) -> SCNNode {
         let containerNode = SCNNode()
         let modelNode = node.clone()
-        let (minimumBounds, maximumBounds) = node.boundingBox
-        let centerX = (minimumBounds.x + maximumBounds.x) / 2
-        let centerZ = (minimumBounds.z + maximumBounds.z) / 2
+        modelNode.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
+        modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
+        modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
+        containerNode.addChildNode(modelNode)
 
-        modelNode.position.x -= centerX
-        modelNode.position.y -= minimumBounds.y
-        modelNode.position.z -= centerZ
-
+        var (minimumBounds, maximumBounds) = containerNode.boundingBox
         let largestDimension = max(
             maximumBounds.x - minimumBounds.x,
             maximumBounds.y - minimumBounds.y,
@@ -707,11 +705,13 @@ enum BarebonesRoomSceneBuilder {
             modelNode.scale = SCNVector3(scale, scale, scale)
         }
 
-        modelNode.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
-        modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
-        modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
+        (minimumBounds, maximumBounds) = containerNode.boundingBox
+        let centerX = (minimumBounds.x + maximumBounds.x) / 2
+        let centerZ = (minimumBounds.z + maximumBounds.z) / 2
+        modelNode.position.x -= centerX
+        modelNode.position.y -= minimumBounds.y
+        modelNode.position.z -= centerZ
 
-        containerNode.addChildNode(modelNode)
         return containerNode
     }
 

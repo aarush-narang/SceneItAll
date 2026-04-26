@@ -175,12 +175,14 @@ final class DesignsListViewModel: ObservableObject {
                 designs.insert(DesignSummary(remoteDesign: createdDesign), at: 0)
                 hasLoadedDesigns = true
 
-                scene = try BarebonesRoomImportLoader.loadScene(from: data)
+                let roomPayload = createdDesign.shell.replacingObjects(with: importedObjects)
+                let roomData = try RoomJSONSanitizer.sanitizedJSONData(from: roomPayload)
+                scene = try BarebonesRoomImportLoader.loadScene(from: roomData)
                 activeEditorSession = RoomEditorSession(
                     designID: createdDesign.id,
                     scene: scene,
                     title: importedName,
-                    baseRoomData: data,
+                    baseRoomData: roomData,
                     initialPlacedObjects: importedObjects
                 )
             case .stripFurniture: // This will never happen since we removed the third option in the list when + button is clicked

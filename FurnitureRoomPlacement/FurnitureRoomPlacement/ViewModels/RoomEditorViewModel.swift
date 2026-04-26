@@ -204,6 +204,9 @@ final class RoomEditorViewModel: ObservableObject {
             agentSessionID = response.sessionID
             if response.placements.isEmpty {
                 appendMessage(response.assistantText)
+                if !response.toolCalls.isEmpty {
+                    await refreshSceneFromDesignObjects()
+                }
             } else {
                 applyPlacementResponse(response, fallbackMessage: "Updated the room layout using the returned placement suggestions.")
             }
@@ -313,6 +316,52 @@ final class RoomEditorViewModel: ObservableObject {
             syncErrorMessage = error.localizedDescription
             isShowingSyncError = true
         }
+    }
+
+    private func refreshSceneFromDesignObjects() async {
+        do {
+            let fetchedObjects = try await FurnitureAPIClient.shared.fetchDesignObjects(designID: designID)
+            await rebuildSceneOverlays(using: fetchedObjects)
+        } catch {
+            syncErrorMessage = error.localizedDescription
+            isShowingSyncError = true
+        }
+    }
+
+    private func rebuildSceneOverlays(using objects: [PlacedFurnitureObject]) async {
+        removeExistingOverlayNodes()
+
+        var restoredAnyObject = false
+        for object in objects {
+            guard let remoteURL = object.furniture.remoteUSDZURL else { continue }
+            do {
+                let localURL = try await RemoteUSDZCache.shared.localFileURL(for: remoteURL)
+                let didAdd = BarebonesRoomSceneBuilder.overlayExternalUSDZ(
+                    on: scene,
+                    fileURL: localURL,
+                    overlayIdentifier: object.id
+                )
+                guard didAdd else { continue }
+                let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: object.id)
+                if let restoredNode = scene.rootNode.childNode(withName: nodeName, recursively: true) {
+                    object.placement.apply(to: restoredNode)
+                    restoredAnyObject = true
+                }
+            } catch {
+                isShowingOverlayError = true
+            }
+        }
+
+        placedObjects = objects
+        hasOverlayedExternalUSDZ = restoredAnyObject
+    }
+
+    private func removeExistingOverlayNodes() {
+        scene.rootNode
+            .childNodes(passingTest: { node, _ in
+                node.name?.hasPrefix("external-usdz-overlay-") == true
+            })
+            .forEach { $0.removeFromParentNode() }
     }
 
     // MARK: - Restoration
