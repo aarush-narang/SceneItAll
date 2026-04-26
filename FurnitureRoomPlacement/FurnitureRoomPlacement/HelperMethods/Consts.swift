@@ -90,23 +90,23 @@ struct Furniture: Codable, Identifiable {
         if let id = try container.decodeIfPresent(String.self, forKey: .id) {
             self.id = id
         } else {
-            self.id = try container.decode(String.self, forKey: .legacyID)
+            self.id = try container.decodeIfPresent(String.self, forKey: .legacyID) ?? UUID().uuidString
         }
 
-        name = try container.decode(String.self, forKey: .name)
-        familyKey = try container.decode(String.self, forKey: .familyKey)
-        source = try container.decode(Source.self, forKey: .source)
-        taxonomyIkea = try container.decode(TaxonomyIkea.self, forKey: .taxonomyIkea)
-        taxonomyInferred = try container.decode(TaxonomyInferred.self, forKey: .taxonomyInferred)
-        price = try container.decode(Price.self, forKey: .price)
-        rating = try container.decode(Rating.self, forKey: .rating)
-        dimensionsIkea = try container.decode(DimensionsIkea.self, forKey: .dimensionsIkea)
-        dimensionsBbox = try container.decode(DimensionsBbox.self, forKey: .dimensionsBbox)
-        attributes = try container.decode(Attributes.self, forKey: .attributes)
-        designSummary = try container.decode(String.self, forKey: .designSummary)
-        description = try container.decode(String.self, forKey: .description)
-        embeddingText = try container.decode(String.self, forKey: .embeddingText)
-        files = try container.decode(Files.self, forKey: .files)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Untitled Furniture"
+        familyKey = try container.decodeIfPresent(String.self, forKey: .familyKey) ?? name
+        source = try container.decodeIfPresent(Source.self, forKey: .source) ?? .empty
+        taxonomyIkea = try container.decodeIfPresent(TaxonomyIkea.self, forKey: .taxonomyIkea) ?? .empty
+        taxonomyInferred = try container.decodeIfPresent(TaxonomyInferred.self, forKey: .taxonomyInferred) ?? .empty
+        price = try container.decodeIfPresent(Price.self, forKey: .price) ?? .empty
+        rating = try container.decodeIfPresent(Rating.self, forKey: .rating) ?? .empty
+        dimensionsIkea = try container.decodeIfPresent(DimensionsIkea.self, forKey: .dimensionsIkea) ?? .empty
+        dimensionsBbox = try container.decodeIfPresent(DimensionsBbox.self, forKey: .dimensionsBbox) ?? .empty
+        attributes = try container.decodeIfPresent(Attributes.self, forKey: .attributes) ?? .empty
+        designSummary = try container.decodeIfPresent(String.self, forKey: .designSummary) ?? ""
+        description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        embeddingText = try container.decodeIfPresent(String.self, forKey: .embeddingText) ?? ""
+        files = try container.decodeIfPresent(Files.self, forKey: .files) ?? .empty
     }
 
     func encode(to encoder: Encoder) throws {
@@ -132,6 +132,24 @@ struct Furniture: Codable, Identifiable {
 struct Source: Codable {
     let name: String
     let url: String
+
+    init(name: String, url: String) {
+        self.name = name
+        self.url = url
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
+    }
+
+    static let empty = Source(name: "", url: "")
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case url
+    }
 }
 
 struct TaxonomyIkea: Codable {
@@ -150,21 +168,110 @@ struct TaxonomyIkea: Codable {
         case material
         case color
     }
+
+    init(
+        categoryLeaf: String,
+        categoryPath: [String],
+        segment: String,
+        topDepartment: String,
+        material: String,
+        color: String
+    ) {
+        self.categoryLeaf = categoryLeaf
+        self.categoryPath = categoryPath
+        self.segment = segment
+        self.topDepartment = topDepartment
+        self.material = material
+        self.color = color
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        categoryLeaf = try container.decodeIfPresent(String.self, forKey: .categoryLeaf) ?? ""
+        categoryPath = try container.decodeIfPresent([String].self, forKey: .categoryPath) ?? []
+        segment = try container.decodeIfPresent(String.self, forKey: .segment) ?? ""
+        topDepartment = try container.decodeIfPresent(String.self, forKey: .topDepartment) ?? ""
+        material = try container.decodeIfPresent(String.self, forKey: .material) ?? ""
+        color = try container.decodeIfPresent(String.self, forKey: .color) ?? ""
+    }
+
+    static let empty = TaxonomyIkea(
+        categoryLeaf: "",
+        categoryPath: [],
+        segment: "",
+        topDepartment: "",
+        material: "",
+        color: ""
+    )
 }
 
 struct TaxonomyInferred: Codable {
     let category: String
     let subcategory: String
+
+    init(category: String, subcategory: String) {
+        self.category = category
+        self.subcategory = subcategory
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        category = try container.decodeIfPresent(String.self, forKey: .category) ?? ""
+        subcategory = try container.decodeIfPresent(String.self, forKey: .subcategory) ?? ""
+    }
+
+    static let empty = TaxonomyInferred(category: "", subcategory: "")
+
+    private enum CodingKeys: String, CodingKey {
+        case category
+        case subcategory
+    }
 }
 
 struct Price: Codable {
     let value: Double
     let currency: String
+
+    init(value: Double, currency: String) {
+        self.value = value
+        self.currency = currency
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        value = try container.decodeIfPresent(Double.self, forKey: .value) ?? 0
+        currency = try container.decodeIfPresent(String.self, forKey: .currency) ?? "USD"
+    }
+
+    static let empty = Price(value: 0, currency: "USD")
+
+    private enum CodingKeys: String, CodingKey {
+        case value
+        case currency
+    }
 }
 
 struct Rating: Codable {
     let value: Double
     let count: Int
+
+    init(value: Double, count: Int) {
+        self.value = value
+        self.count = count
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        value = try container.decodeIfPresent(Double.self, forKey: .value) ?? 0
+        count = try container.decodeIfPresent(Int.self, forKey: .count) ?? 0
+    }
+
+    static let empty = Rating(value: 0, count: 0)
+
+    private enum CodingKeys: String, CodingKey {
+        case value
+        case count
+    }
 }
 
 struct DimensionsIkea: Codable {
@@ -177,6 +284,21 @@ struct DimensionsIkea: Codable {
         case depthIn = "depth_in"
         case heightIn = "height_in"
     }
+
+    init(widthIn: Double, depthIn: Double, heightIn: Double) {
+        self.widthIn = widthIn
+        self.depthIn = depthIn
+        self.heightIn = heightIn
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        widthIn = try container.decodeIfPresent(Double.self, forKey: .widthIn) ?? 0
+        depthIn = try container.decodeIfPresent(Double.self, forKey: .depthIn) ?? 0
+        heightIn = try container.decodeIfPresent(Double.self, forKey: .heightIn) ?? 0
+    }
+
+    static let empty = DimensionsIkea(widthIn: 0, depthIn: 0, heightIn: 0)
 }
 
 struct DimensionsBbox: Codable {
@@ -189,6 +311,21 @@ struct DimensionsBbox: Codable {
         case heightM = "height_m"
         case depthM = "depth_m"
     }
+
+    init(widthM: Double, heightM: Double, depthM: Double) {
+        self.widthM = widthM
+        self.heightM = heightM
+        self.depthM = depthM
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        widthM = try container.decodeIfPresent(Double.self, forKey: .widthM) ?? 0
+        heightM = try container.decodeIfPresent(Double.self, forKey: .heightM) ?? 0
+        depthM = try container.decodeIfPresent(Double.self, forKey: .depthM) ?? 0
+    }
+
+    static let empty = DimensionsBbox(widthM: 0, heightM: 0, depthM: 0)
 }
 
 struct Attributes: Codable {
@@ -233,6 +370,93 @@ struct Attributes: Codable {
         case hasLegs = "has_legs"
         case stackable
     }
+
+    init(
+        styleTags: [String],
+        designLineage: String,
+        materialPrimary: String,
+        textureAndFinish: String,
+        colorPrimary: String,
+        era: String,
+        formality: String,
+        ambientMood: [String],
+        visualWeight: String,
+        scale: String,
+        roomRole: String,
+        suitableRooms: [String],
+        placementHints: [String],
+        pairsWellWith: [String],
+        useScenarios: [String],
+        spaceRequirements: String,
+        hasArms: Bool,
+        hasLegs: Bool,
+        stackable: Bool
+    ) {
+        self.styleTags = styleTags
+        self.designLineage = designLineage
+        self.materialPrimary = materialPrimary
+        self.textureAndFinish = textureAndFinish
+        self.colorPrimary = colorPrimary
+        self.era = era
+        self.formality = formality
+        self.ambientMood = ambientMood
+        self.visualWeight = visualWeight
+        self.scale = scale
+        self.roomRole = roomRole
+        self.suitableRooms = suitableRooms
+        self.placementHints = placementHints
+        self.pairsWellWith = pairsWellWith
+        self.useScenarios = useScenarios
+        self.spaceRequirements = spaceRequirements
+        self.hasArms = hasArms
+        self.hasLegs = hasLegs
+        self.stackable = stackable
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        styleTags = try container.decodeIfPresent([String].self, forKey: .styleTags) ?? []
+        designLineage = try container.decodeIfPresent(String.self, forKey: .designLineage) ?? ""
+        materialPrimary = try container.decodeIfPresent(String.self, forKey: .materialPrimary) ?? ""
+        textureAndFinish = try container.decodeIfPresent(String.self, forKey: .textureAndFinish) ?? ""
+        colorPrimary = try container.decodeIfPresent(String.self, forKey: .colorPrimary) ?? ""
+        era = try container.decodeIfPresent(String.self, forKey: .era) ?? ""
+        formality = try container.decodeIfPresent(String.self, forKey: .formality) ?? ""
+        ambientMood = try container.decodeIfPresent([String].self, forKey: .ambientMood) ?? []
+        visualWeight = try container.decodeIfPresent(String.self, forKey: .visualWeight) ?? ""
+        scale = try container.decodeIfPresent(String.self, forKey: .scale) ?? ""
+        roomRole = try container.decodeIfPresent(String.self, forKey: .roomRole) ?? ""
+        suitableRooms = try container.decodeIfPresent([String].self, forKey: .suitableRooms) ?? []
+        placementHints = try container.decodeIfPresent([String].self, forKey: .placementHints) ?? []
+        pairsWellWith = try container.decodeIfPresent([String].self, forKey: .pairsWellWith) ?? []
+        useScenarios = try container.decodeIfPresent([String].self, forKey: .useScenarios) ?? []
+        spaceRequirements = try container.decodeIfPresent(String.self, forKey: .spaceRequirements) ?? ""
+        hasArms = try container.decodeIfPresent(Bool.self, forKey: .hasArms) ?? false
+        hasLegs = try container.decodeIfPresent(Bool.self, forKey: .hasLegs) ?? false
+        stackable = try container.decodeIfPresent(Bool.self, forKey: .stackable) ?? false
+    }
+
+    static let empty = Attributes(
+        styleTags: [],
+        designLineage: "",
+        materialPrimary: "",
+        textureAndFinish: "",
+        colorPrimary: "",
+        era: "",
+        formality: "",
+        ambientMood: [],
+        visualWeight: "",
+        scale: "",
+        roomRole: "",
+        suitableRooms: [],
+        placementHints: [],
+        pairsWellWith: [],
+        useScenarios: [],
+        spaceRequirements: "",
+        hasArms: false,
+        hasLegs: false,
+        stackable: false
+    )
 }
 
 struct Files: Codable {
@@ -243,6 +467,19 @@ struct Files: Codable {
         case usdzURL = "usdz_url"
         case thumbURLs = "thumb_urls"
     }
+
+    init(usdzURL: String, thumbURLs: [String]) {
+        self.usdzURL = usdzURL
+        self.thumbURLs = thumbURLs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        usdzURL = try container.decodeIfPresent(String.self, forKey: .usdzURL) ?? ""
+        thumbURLs = try container.decodeIfPresent([String].self, forKey: .thumbURLs) ?? []
+    }
+
+    static let empty = Files(usdzURL: "", thumbURLs: [])
 }
 extension Furniture {
     var savedSnapshot: SavedFurnitureSnapshot {

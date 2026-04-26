@@ -140,7 +140,9 @@ struct OnboardingView: View {
             allowedContentTypes: [.json],
             allowsMultipleSelection: false
         ) { result in
-            handleImport(result)
+            Task {
+                await handleImport(result)
+            }
         }
         .alert("Import Failed", isPresented: $isShowingImportError) {
             Button("OK", role: .cancel) { }
@@ -149,7 +151,8 @@ struct OnboardingView: View {
         }
     }
 
-    private func handleImport(_ result: Result<[URL], Error>) {
+    @MainActor
+    private func handleImport(_ result: Result<[URL], Error>) async {
         do {
             guard let fileURL = try result.get().first else { return }
             let didAccess = fileURL.startAccessingSecurityScopedResource()
@@ -164,10 +167,16 @@ struct OnboardingView: View {
 
             switch importMode {
             case .barebones:
-                let normalizedData = try BarebonesRoomJSONSanitizer.normalizedRoomData(from: data)
-                scene = try BarebonesRoomImportLoader.loadScene(from: normalizedData)
-                importedRoomData = normalizedData
-                importedPlacedObjects = try BarebonesRoomImportLoader.loadPlacedObjects(from: normalizedData)
+                let fetchedObjects = try await fetchDesignObjects()
+                let fetchedObjectsData = try JSONEncoder().encode(fetchedObjects)
+                let mergedRoom = try BarebonesRoomJSONSanitizer.roomData(
+                    byMergingObjectsFromDesignObjectsData: fetchedObjectsData,
+                    intoRoomData: data
+                )
+
+                scene = try BarebonesRoomImportLoader.loadScene(from: mergedRoom.roomData)
+                importedRoomData = mergedRoom.roomData
+                importedPlacedObjects = mergedRoom.objects
             case .stripFurniture:
                 let strippedData = try BarebonesRoomJSONSanitizer.stripToEssentialSurfaces(from: data)
                 scene = try BarebonesRoomImportLoader.loadScene(from: strippedData)
@@ -181,6 +190,10 @@ struct OnboardingView: View {
             importErrorMessage = error.localizedDescription
             isShowingImportError = true
         }
+    }
+
+    private func fetchDesignObjects() async throws -> [PlacedFurnitureObject] {
+        try await FurnitureAPIClient.shared.fetchDesignObjects()
     }
 }
 
@@ -214,6 +227,8 @@ private struct ImportedRoomShellView: View {
     @State private var isShowingSaveExporter = false
     @State private var exportErrorMessage = ""
     @State private var isShowingExportError = false
+    @State private var syncErrorMessage = ""
+    @State private var isShowingSyncError = false
     @State private var hasRestoredSavedFurniture = false
     @State private var isShowingAssistant = false
     @State private var assistantDraft = ""
@@ -310,6 +325,11 @@ private struct ImportedRoomShellView: View {
             } message: {
                 Text(exportErrorMessage)
             }
+            .alert("Sync Failed", isPresented: $isShowingSyncError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(syncErrorMessage)
+            }
             .onChange(of: hasOverlayedExternalUSDZ) { _, hasOverlay in
                 if !hasOverlay {
                     furnitureInteractionMode = .view
@@ -337,6 +357,9 @@ private struct ImportedRoomShellView: View {
                         scene: scene,
                         onFurnitureAdded: { placedObject in
                             placedObjects.append(placedObject)
+                            Task {
+                                await syncAddedFurnitureObject(placedObject)
+                            }
                         }
                     )
                 }
@@ -476,6 +499,24 @@ private struct ImportedRoomShellView: View {
         var updatedObject = object
         updatedObject.placement = FurniturePlacement(from: placedNode)
         return updatedObject
+    }
+
+    @MainActor
+    private func syncAddedFurnitureObject(_ object: PlacedFurnitureObject) async {
+        do {
+            try await FurnitureAPIClient.shared.addObjectToDesign(
+                currentPlacement(for: object),
+                designName: resolvedDesignName
+            )
+        } catch {
+            syncErrorMessage = error.localizedDescription
+            isShowingSyncError = true
+        }
+    }
+
+    private var resolvedDesignName: String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? "Imported Room" : trimmedTitle
     }
 
     private func restoreSavedFurnitureIfNeeded() async {
@@ -667,7 +708,7 @@ private struct ImportedRoomSceneView: UIViewRepresentable {
 
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 0
-            draggedNode.eulerAngles.x -= Float(rotation)
+            draggedNode.eulerAngles.y -= Float(rotation)
             SCNTransaction.commit()
         }
 
