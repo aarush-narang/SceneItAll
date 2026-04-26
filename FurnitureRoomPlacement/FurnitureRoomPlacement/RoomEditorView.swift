@@ -53,7 +53,7 @@ struct RoomEditorView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
 
-                    editorActions
+                    editorToolbar
                 }
             }
             .navigationTitle(viewModel.resolvedTitle)
@@ -123,40 +123,41 @@ struct RoomEditorView: View {
         }
     }
 
-    // MARK: - Editor Actions
+    // MARK: - Bottom Toolbar
 
-    private var editorActions: some View {
-        HStack {
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 10) {
-                EditorToolbarButton(icon: "square.grid.2x2", label: "Catalog") {
-                    viewModel.showFurnitureCatalog = true
-                }
-
-                EditorToolbarButton(
-                    icon: viewModel.furnitureInteractionMode == .move
-                        ? "checkmark.circle" : "arrow.up.and.down.and.arrow.left.and.right",
-                    label: viewModel.furnitureInteractionMode == .move ? "Done" : "Move"
-                ) {
-                    viewModel.toggleMoveMode()
-                }
-                .opacity(viewModel.hasOverlayedExternalUSDZ ? 1 : 0.4)
-                .disabled(!viewModel.hasOverlayedExternalUSDZ)
-
-                EditorToolbarButton(icon: "square.and.arrow.up", label: "Export") {
-                    viewModel.saveRoomJSON()
-                }
-                .opacity(viewModel.placedObjects.isEmpty ? 0.4 : 1)
-                .disabled(viewModel.placedObjects.isEmpty)
+    private var editorToolbar: some View {
+        HStack(spacing: 8) {
+            EditorToolbarButton(icon: "square.grid.2x2", label: "Catalog") {
+                viewModel.showFurnitureCatalog = true
             }
+
+            EditorToolbarButton(
+                icon: viewModel.furnitureInteractionMode == .move
+                    ? "checkmark.circle" : "arrow.up.and.down.and.arrow.left.and.right",
+                label: viewModel.furnitureInteractionMode == .move ? "Done" : "Move"
+            ) {
+                viewModel.toggleMoveMode()
+            }
+            .opacity(viewModel.hasOverlayedExternalUSDZ ? 1 : 0.4)
+            .disabled(!viewModel.hasOverlayedExternalUSDZ)
+
+            EditorToolbarButton(icon: "square.and.arrow.up", label: "Export") {
+                viewModel.saveRoomJSON()
+            }
+            .opacity(viewModel.placedObjects.isEmpty ? 0.4 : 1)
+            .disabled(viewModel.placedObjects.isEmpty)
         }
         .padding(.horizontal, 16)
+        .padding(.top, 12)
         .padding(.bottom, 32)
+        .background(
+            Color(.systemBackground)
+                .shadow(color: .black.opacity(0.06), radius: 8, y: -2)
+        )
     }
 }
 
-// MARK: - Action Button
+// MARK: - Toolbar Button
 
 private struct EditorToolbarButton: View {
     let icon: String
@@ -165,18 +166,17 @@ private struct EditorToolbarButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 20))
                     .foregroundStyle(.primary)
                 Text(label)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(.regularMaterial, in: Capsule())
-            .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
     }

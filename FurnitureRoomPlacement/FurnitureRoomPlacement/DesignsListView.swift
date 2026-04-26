@@ -74,8 +74,15 @@ struct DesignsListView: View {
                 .presentationDetents([.height(280)])
                 .presentationDragIndicator(.visible)
             }
-            .fullScreenCover(isPresented: $viewModel.isShowingScan) {
+            .fullScreenCover(isPresented: $viewModel.isShowingScan, onDismiss: {
+                viewModel.presentMatchingViewIfNeeded()
+            }) {
                 RoomCaptureContainerView()
+            }
+            .fullScreenCover(isPresented: $viewModel.isShowingScanMatching, onDismiss: {
+                Task { await viewModel.loadDesigns() }
+            }) {
+                ScanMatchingView()
             }
             .fullScreenCover(item: $viewModel.activeEditorSession) { session in
                 RoomEditorView(

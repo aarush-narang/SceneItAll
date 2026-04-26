@@ -290,7 +290,7 @@ enum BarebonesRoomSceneBuilder {
         scene.background.contents = UIColor(white: 0.6, alpha: 1.0)
         let rootNode = scene.rootNode
 
-        addSanitizedFloor(from: room.room, to: rootNode)
+        addSanitizedFloor(from: room, to: rootNode)
         addSanitizedWalls(room.walls, to: rootNode)
         addSanitizedOpenings(room.openings, to: rootNode)
         addCameraAndLights(to: rootNode)
@@ -377,22 +377,36 @@ enum BarebonesRoomSceneBuilder {
         }
     }
 
-    private static func addSanitizedFloor(from room: SanitizedRoom, to rootNode: SCNNode) {
+    private static func addSanitizedFloor(from payload: SanitizedRoomPayload, to rootNode: SCNNode) {
         let floorNode = SCNNode()
-        floorNode.name = "\(SurfaceKind.floor.nodeName)-\(room.id)"
+        floorNode.name = "\(SurfaceKind.floor.nodeName)-\(payload.room.id)"
+        floorNode.position.y = floorElevation(from: payload)
 
-        if let geometry = makeSanitizedFloorGeometry(from: room) {
+        if let geometry = makeSanitizedFloorGeometry(from: payload) {
             let geometryNode = SCNNode(geometry: geometry)
             geometryNode.position.y += surfaceDepthOffset(for: .floor)
             geometryNode.renderingOrder = renderingOrder(for: .floor)
             floorNode.addChildNode(geometryNode)
         }
 
-        if let outlineNode = makeSanitizedFloorOutlineNode(from: room) {
+        if let outlineNode = makeSanitizedFloorOutlineNode(from: payload) {
             floorNode.addChildNode(outlineNode)
         }
 
         rootNode.addChildNode(floorNode)
+    }
+
+    private static func floorElevation(from payload: SanitizedRoomPayload) -> Float {
+        let wallBottoms = payload.walls.compactMap { wall -> Double? in
+            guard wall.center.count >= 2 else { return nil }
+            return wall.center[1] - (wall.height / 2)
+        }
+
+        guard let lowestWallBottom = wallBottoms.min() else {
+            return 0
+        }
+
+        return Float(lowestWallBottom)
     }
 
     private static func addSanitizedPlane(
@@ -439,33 +453,113 @@ enum BarebonesRoomSceneBuilder {
         rootNode.addChildNode(surfaceNode)
     }
 
-    private static func makeSanitizedFloorGeometry(from room: SanitizedRoom) -> SCNGeometry? {
-        let polygon = sanitizedFloorVertices(from: room)
+    private static func makeSanitizedFloorGeometry(from payload: SanitizedRoomPayload) -> SCNGeometry? {
+        let polygon = sanitizedFloorVertices(from: payload)
         guard polygon.count >= 3 else { return nil }
         return polygonGeometry(from: polygon, kind: .floor)
     }
 
-    private static func makeSanitizedFloorOutlineNode(from room: SanitizedRoom) -> SCNNode? {
-        let vertices = sanitizedFloorVertices(from: room).map { SCNVector3($0.x, $0.y, $0.z) }
+    private static func makeSanitizedFloorOutlineNode(from payload: SanitizedRoomPayload) -> SCNNode? {
+        let vertices = sanitizedFloorVertices(from: payload).map { SCNVector3($0.x, $0.y, $0.z) }
         return makeOutlineNode(from: vertices, kind: .floor)
     }
 
-    private static func sanitizedFloorVertices(from room: SanitizedRoom) -> [simd_float3] {
-        if room.floorPolygon.count >= 3 {
-            return room.floorPolygon.compactMap { point in
-                guard point.count >= 2 else { return nil }
-                return simd_float3(Float(point[0]), 0, Float(point[1]))
-            }
+    private static func sanitizedFloorVertices(from payload: SanitizedRoomPayload) -> [simd_float3] {
+        let polygonFromShell: [simd_float3] = payload.room.floorPolygon.compactMap { point -> simd_float3? in
+            guard point.count >= 2 else { return nil }
+            return simd_float3(Float(point[0]), 0, Float(point[1]))
+        }
+        if isValidFloorPolygon(polygonFromShell) {
+            return polygonFromShell
         }
 
-        let halfWidth = Float(max(room.boundingBox.width, 0.01) / 2)
-        let halfDepth = Float(max(room.boundingBox.depth, 0.01) / 2)
+        let polygonFromWalls = floorPolygon(from: payload.walls)
+        if isValidFloorPolygon(polygonFromWalls) {
+            return polygonFromWalls
+        }
+
+        let room = payload.room
         return [
-            simd_float3(-halfWidth, 0, -halfDepth),
-            simd_float3(halfWidth, 0, -halfDepth),
-            simd_float3(halfWidth, 0, halfDepth),
-            simd_float3(-halfWidth, 0, halfDepth)
+            simd_float3(-Float(max(room.boundingBox.width, 0.01) / 2), 0, -Float(max(room.boundingBox.depth, 0.01) / 2)),
+            simd_float3(Float(max(room.boundingBox.width, 0.01) / 2), 0, -Float(max(room.boundingBox.depth, 0.01) / 2)),
+            simd_float3(Float(max(room.boundingBox.width, 0.01) / 2), 0, Float(max(room.boundingBox.depth, 0.01) / 2)),
+            simd_float3(-Float(max(room.boundingBox.width, 0.01) / 2), 0, Float(max(room.boundingBox.depth, 0.01) / 2))
         ]
+    }
+
+    private static func floorPolygon(from walls: [SanitizedWall]) -> [simd_float3] {
+        let points = walls.flatMap { wall in
+            let startX = wall.start.indices.contains(0) ? wall.start[0] : 0
+            let startZ = wall.start.indices.contains(1) ? wall.start[1] : 0
+            let endX = wall.end.indices.contains(0) ? wall.end[0] : 0
+            let endZ = wall.end.indices.contains(1) ? wall.end[1] : 0
+            return [
+                simd_float2(Float(startX), Float(startZ)),
+                simd_float2(Float(endX), Float(endZ))
+            ]
+        }
+        let uniquePoints = deduplicatedFloorPoints(points)
+        let hull = convexHull(uniquePoints)
+        return hull.map { simd_float3($0.x, 0, $0.y) }
+    }
+
+    private static func isValidFloorPolygon(_ polygon: [simd_float3]) -> Bool {
+        guard polygon.count >= 3 else { return false }
+        return abs(polygonArea(polygon)) > 0.01
+    }
+
+    private static func polygonArea(_ polygon: [simd_float3]) -> Float {
+        guard polygon.count >= 3 else { return 0 }
+        var area: Float = 0
+        for index in polygon.indices {
+            let current = polygon[index]
+            let next = polygon[(index + 1) % polygon.count]
+            area += (current.x * next.z) - (next.x * current.z)
+        }
+        return area * 0.5
+    }
+
+    private static func deduplicatedFloorPoints(_ points: [simd_float2], tolerance: Float = 0.02) -> [simd_float2] {
+        var unique: [simd_float2] = []
+        for point in points {
+            if unique.contains(where: { simd_distance($0, point) <= tolerance }) {
+                continue
+            }
+            unique.append(point)
+        }
+        return unique
+    }
+
+    private static func convexHull(_ points: [simd_float2]) -> [simd_float2] {
+        guard points.count > 3 else { return points }
+        let sorted = points.sorted {
+            if $0.x == $1.x { return $0.y < $1.y }
+            return $0.x < $1.x
+        }
+
+        func cross(_ origin: simd_float2, _ a: simd_float2, _ b: simd_float2) -> Float {
+            let oa = a - origin
+            let ob = b - origin
+            return (oa.x * ob.y) - (oa.y * ob.x)
+        }
+
+        var lower: [simd_float2] = []
+        for point in sorted {
+            while lower.count >= 2, cross(lower[lower.count - 2], lower[lower.count - 1], point) <= 0 {
+                lower.removeLast()
+            }
+            lower.append(point)
+        }
+
+        var upper: [simd_float2] = []
+        for point in sorted.reversed() {
+            while upper.count >= 2, cross(upper[upper.count - 2], upper[upper.count - 1], point) <= 0 {
+                upper.removeLast()
+            }
+            upper.append(point)
+        }
+
+        return Array((lower.dropLast() + upper.dropLast()))
     }
 
     private static func sanitizedSurfaceKind(for type: String) -> SurfaceKind {

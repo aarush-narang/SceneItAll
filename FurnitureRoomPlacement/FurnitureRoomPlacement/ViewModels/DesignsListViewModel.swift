@@ -35,6 +35,7 @@ final class DesignsListViewModel: ObservableObject {
     @Published var isShowingImporter = false
     @Published var isShowingUnsupportedDeviceSheet = false
     @Published var isShowingStyleQuiz = false
+    @Published var isShowingScanMatching = false
 
     @Published var importMode: RoomImportMode = .barebones
     @Published var activeEditorSession: RoomEditorSession?
@@ -60,6 +61,12 @@ final class DesignsListViewModel: ObservableObject {
 
     var currentStyleQuizResult: StyleQuizResult {
         StyleQuizResult.fromUserDefaults()
+    }
+
+    func presentMatchingViewIfNeeded() {
+        if ScanResultHolder.shared.room != nil {
+            isShowingScanMatching = true
+        }
     }
 
     @MainActor
@@ -158,28 +165,23 @@ final class DesignsListViewModel: ObservableObject {
 
             switch importMode {
             case .barebones:
-                let fetchedObjects = try await FurnitureAPIClient.shared.fetchDesignObjects()
-                let fetchedObjectsData = try JSONEncoder().encode(fetchedObjects)
-                let mergedRoom = try BarebonesRoomJSONSanitizer.roomData(
-                    byMergingObjectsFromDesignObjectsData: fetchedObjectsData,
-                    intoRoomData: data
-                )
+                let importedObjects = try BarebonesRoomImportLoader.loadPlacedObjects(from: data)
                 let createdDesign = try await FurnitureAPIClient.shared.createDesign(
                     name: importedName,
-                    barebonesJSONData: mergedRoom.roomData,
-                    objects: mergedRoom.objects,
+                    barebonesJSONData: data,
+                    objects: importedObjects,
                     userID: UserSession.shared.userID
                 )
                 designs.insert(DesignSummary(remoteDesign: createdDesign), at: 0)
                 hasLoadedDesigns = true
 
-                scene = try BarebonesRoomImportLoader.loadScene(from: mergedRoom.roomData)
+                scene = try BarebonesRoomImportLoader.loadScene(from: data)
                 activeEditorSession = RoomEditorSession(
                     designID: createdDesign.id,
                     scene: scene,
                     title: importedName,
-                    baseRoomData: mergedRoom.roomData,
-                    initialPlacedObjects: mergedRoom.objects
+                    baseRoomData: data,
+                    initialPlacedObjects: importedObjects
                 )
             case .stripFurniture: // This will never happen since we removed the third option in the list when + button is clicked
                 let strippedData = try BarebonesRoomJSONSanitizer.stripToEssentialSurfaces(from: data)
