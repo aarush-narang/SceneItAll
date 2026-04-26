@@ -20,22 +20,36 @@ struct ImportedRoomAssistantOverlay: View {
     @Binding var isPresented: Bool
     @Binding var draft: String
     let messages: [ImportedRoomAssistantMessage]
+    let isChatLoading: Bool
+    let isCleanupLoading: Bool
+    let hasPendingPlacementPreview: Bool
     let onSend: () -> Void
+    let onPlacementCleanup: () -> Void
+    let onAcceptPlacementChanges: () -> Void
+    let onDeclinePlacementChanges: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if isPresented {
-                chatPanel
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+        HStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 12) {
+                if isPresented {
+                    chatPanel
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
 
-            HStack {
-                assistantButton
-                Spacer(minLength: 0)
+                HStack(spacing: 12) {
+                    assistantButton
+                    cleanupButton
+                }
+            }
+            Spacer(minLength: 0)
+
+            if hasPendingPlacementPreview {
+                placementDecisionPanel
             }
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isPresented)
-        .padding(.leading, 16)
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: hasPendingPlacementPreview)
+        .padding(.horizontal, 16)
         .padding(.bottom, 16)
     }
 
@@ -61,6 +75,36 @@ struct ImportedRoomAssistantOverlay: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isPresented ? "Close room assistant" : "Open room assistant")
+    }
+
+    private var cleanupButton: some View {
+        Button(action: onPlacementCleanup) {
+            Group {
+                if isCleanupLoading {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "wand.and.stars")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 56, height: 56)
+            .background(
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.teal, Color.green],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .shadow(color: .black.opacity(0.16), radius: 14, y: 8)
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy || hasPendingPlacementPreview)
+        .accessibilityLabel("Suggest better furniture placement")
     }
 
     private var chatPanel: some View {
@@ -93,6 +137,10 @@ struct ImportedRoomAssistantOverlay: View {
                         ForEach(messages) { message in
                             ImportedRoomAssistantBubble(message: message)
                         }
+
+                        if isBusy {
+                            ImportedRoomAssistantLoadingBubble()
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
@@ -118,29 +166,80 @@ struct ImportedRoomAssistantOverlay: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
+                    .disabled(isBusy)
 
                 Button(action: onSend) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 38, height: 38)
-                        .background(
-                            Circle()
-                                .fill(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.gray : Color.blue)
-                        )
+                    Group {
+                        if isChatLoading {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .frame(width: 38, height: 38)
+                    .background(
+                        Circle()
+                            .fill(sendButtonColor)
+                    )
                 }
                 .buttonStyle(.plain)
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(isSendDisabled)
             }
             .padding(16)
         }
-        .frame(maxWidth: 340, minHeight: 340, maxHeight: 680)
+        .frame(maxWidth: 340, minHeight: 340, maxHeight: 720)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .stroke(Color.white.opacity(0.35), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.18), radius: 24, y: 12)
+    }
+
+    private var isSendDisabled: Bool {
+        isBusy || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var sendButtonColor: Color {
+        isSendDisabled ? .gray : .blue
+    }
+
+    private var isBusy: Bool {
+        isChatLoading || isCleanupLoading
+    }
+
+    private var placementDecisionPanel: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            Button("Accept") {
+                onAcceptPlacementChanges()
+            }
+            .font(.headline)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(Color.green, in: Capsule())
+            .buttonStyle(.plain)
+
+            Button("Decline") {
+                onDeclinePlacementChanges()
+            }
+            .font(.headline)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(Color.red, in: Capsule())
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 20, y: 10)
     }
 }
 
@@ -180,6 +279,26 @@ private struct ImportedRoomAssistantBubble: View {
                     endPoint: .bottomTrailing
                 )
             )
+        }
+    }
+}
+
+private struct ImportedRoomAssistantLoadingBubble: View {
+    var body: some View {
+        HStack {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+
+                Text("Working...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+            Spacer(minLength: 32)
         }
     }
 }

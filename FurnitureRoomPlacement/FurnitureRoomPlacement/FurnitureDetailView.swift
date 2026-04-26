@@ -19,44 +19,17 @@ struct FurnitureCatalogListView: View {
     @State private var isShowingLoadError = false
 
     var body: some View {
-        List(furnitureItems, id: \.id) { furniture in
-            Button {
+        FurnitureSearchView(
+            onFurnitureSelected: { furniture in
+                furnitureItems = updateStoredFurnitureItems(with: furniture)
                 selectedFurniture = furniture
-            } label: {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(furniture.name)
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        Text(furniture.formattedPrice)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .contentShape(Rectangle())
+            },
+            onError: { message in
+                loadErrorMessage = message
+                isShowingLoadError = true
             }
-            .buttonStyle(.plain)
-        }
-        .overlay {
-            if furnitureItems.isEmpty {
-                ContentUnavailableView(
-                    "No Furniture",
-                    systemImage: "shippingbox",
-                    description: Text("The sample backend furniture file could not be loaded.")
-                )
-            }
-        }
+        )
         .navigationTitle("Furniture Catalog")
-        .task {
-            await loadFurnitureIfNeeded()
-        }
         .sheet(item: $selectedFurniture) { furniture in
             FurnitureDetailView(furniture: furniture) { localUSDZURL in
                 let objectID = UUID().uuidString
@@ -73,7 +46,8 @@ struct FurnitureCatalogListView: View {
                         id: objectID,
                         furniture: furniture,
                         placement: placement,
-                        addedAt: ISO8601DateFormatter().string(from: Date())
+                        addedAt: ISO8601DateFormatter().string(from: Date()),
+                        placedBy: "user"
                     )
                     onFurnitureAdded(addedObject)
                     hasOverlayedExternalUSDZ = true
@@ -91,18 +65,14 @@ struct FurnitureCatalogListView: View {
         }
     }
 
-    @MainActor
-    private func loadFurnitureIfNeeded() async {
-        guard furnitureItems.isEmpty else {
-            return
+    private func updateStoredFurnitureItems(with furniture: Furniture) -> [Furniture] {
+        if let existingIndex = furnitureItems.firstIndex(where: { $0.id == furniture.id }) {
+            var updatedItems = furnitureItems
+            updatedItems[existingIndex] = furniture
+            return updatedItems
         }
 
-        do {
-            furnitureItems = try FurnitureCatalogLoader.loadFromBackendSample()
-        } catch {
-            loadErrorMessage = error.localizedDescription
-            isShowingLoadError = true
-        }
+        return furnitureItems + [furniture]
     }
 }
 
@@ -210,21 +180,97 @@ struct FurnitureDetailView: View {
             Text(furniture.name)
                 .font(.title2.weight(.bold))
 
-            Text(furniture.description)
-                .font(.body)
-                .foregroundStyle(.secondary)
+            DetailSection("Overview") {
+                DetailTextBlock(text: furniture.designSummary)
+                DetailTextBlock(text: furniture.description)
+            }
 
-            Label(furniture.formattedPrice, systemImage: "dollarsign.circle")
-                .foregroundStyle(.secondary)
+            DetailSection("Pricing And Rating") {
+                DetailFactRow(label: "Price", value: furniture.formattedPrice)
+                DetailFactRow(
+                    label: "Rating",
+                    value: "\(furniture.rating.value.formatted(.number.precision(.fractionLength(1)))) / 5 (\(furniture.rating.count) reviews)"
+                )
+            }
 
-            Label("Material: \(furniture.attributes.materialPrimary)", systemImage: "square.stack.3d.down.right")
-                .foregroundStyle(.secondary)
+            DetailSection("Classification") {
+                DetailFactRow(label: "Family Key", value: furniture.familyKey)
+                DetailFactRow(label: "Source", value: furniture.source.name)
+                DetailFactRow(label: "Category", value: furniture.taxonomyInferred.category)
+                DetailFactRow(label: "Subcategory", value: furniture.taxonomyInferred.subcategory)
+                DetailFactRow(label: "IKEA Leaf", value: furniture.taxonomyIkea.categoryLeaf)
+                DetailFactRow(label: "Top Department", value: furniture.taxonomyIkea.topDepartment)
+                DetailFactRow(label: "Segment", value: furniture.taxonomyIkea.segment)
+                DetailFactRow(label: "Source URL", value: furniture.source.url)
+                DetailFactRow(
+                    label: "Category Path",
+                    value: furniture.taxonomyIkea.categoryPath.joined(separator: " > ")
+                )
+            }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Style Tags")
-                    .font(.headline)
+            DetailSection("Dimensions") {
+                DetailFactRow(
+                    label: "IKEA Size",
+                    value: "\(formattedInches(furniture.dimensionsIkea.widthIn)) W x \(formattedInches(furniture.dimensionsIkea.depthIn)) D x \(formattedInches(furniture.dimensionsIkea.heightIn)) H"
+                )
+                DetailFactRow(
+                    label: "3D Bounding Box",
+                    value: "\(formattedMeters(furniture.dimensionsBbox.widthM)) W x \(formattedMeters(furniture.dimensionsBbox.depthM)) D x \(formattedMeters(furniture.dimensionsBbox.heightM)) H"
+                )
+            }
 
+            DetailSection("Materials And Styling") {
+                DetailFactRow(label: "Primary Material", value: furniture.attributes.materialPrimary)
+                DetailFactRow(label: "Texture / Finish", value: furniture.attributes.textureAndFinish)
+                DetailFactRow(label: "Primary Color", value: furniture.attributes.colorPrimary)
+                DetailFactRow(label: "Era", value: furniture.attributes.era)
+                DetailFactRow(label: "Design Lineage", value: furniture.attributes.designLineage)
+                DetailFactRow(label: "Formality", value: furniture.attributes.formality)
+                DetailFactRow(label: "Visual Weight", value: furniture.attributes.visualWeight)
+                DetailFactRow(label: "Scale", value: furniture.attributes.scale)
+            }
+
+            DetailSection("Placement") {
+                DetailFactRow(label: "Room Role", value: furniture.attributes.roomRole)
+                DetailFactRow(label: "Space Requirements", value: furniture.attributes.spaceRequirements)
+                DetailBoolRow(label: "Has Arms", value: furniture.attributes.hasArms)
+                DetailBoolRow(label: "Has Legs", value: furniture.attributes.hasLegs)
+                DetailBoolRow(label: "Stackable", value: furniture.attributes.stackable)
+            }
+
+            DetailSection("Style Tags") {
                 TagBubbleGrid(tags: furniture.attributes.styleTags)
+            }
+
+            DetailSection("Ambient Mood") {
+                TagBubbleGrid(tags: furniture.attributes.ambientMood)
+            }
+
+            DetailSection("Suitable Rooms") {
+                TagBubbleGrid(tags: furniture.attributes.suitableRooms)
+            }
+
+            DetailSection("Placement Hints") {
+                DetailBulletList(items: furniture.attributes.placementHints)
+            }
+
+            DetailSection("Pairs Well With") {
+                DetailBulletList(items: furniture.attributes.pairsWellWith)
+            }
+
+            DetailSection("Use Scenarios") {
+                DetailBulletList(items: furniture.attributes.useScenarios)
+            }
+
+//            DetailSection("Files") {
+//                DetailFactRow(label: "USDZ", value: furniture.files.usdzURL)
+//                if !furniture.files.thumbURLs.isEmpty {
+//                    DetailFactRow(label: "Thumbnails", value: furniture.files.thumbURLs.joined(separator: "\n"))
+//                }
+//            }
+
+            DetailSection("Embedding Text") {
+                DetailTextBlock(text: furniture.embeddingText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -272,6 +318,90 @@ struct FurnitureDetailView: View {
     }
 }
 
+private struct DetailSection<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Color(.secondarySystemBackground).opacity(0.9))
+        )
+    }
+}
+
+private struct DetailFactRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        if !value.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Text(value)
+                    .font(.body)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+}
+
+private struct DetailBoolRow: View {
+    let label: String
+    let value: Bool
+
+    var body: some View {
+        DetailFactRow(label: label, value: value ? "Yes" : "No")
+    }
+}
+
+private struct DetailTextBlock: View {
+    let text: String
+
+    var body: some View {
+        if !text.isEmpty {
+            Text(text)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+    }
+}
+
+private struct DetailBulletList: View {
+    let items: [String]
+
+    var body: some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(items, id: \.self) { item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("•")
+                        Text(item)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct TagBubbleGrid: View {
     let tags: [String]
 
@@ -294,6 +424,14 @@ private struct TagBubbleGrid: View {
             }
         }
     }
+}
+
+private func formattedInches(_ value: Double) -> String {
+    "\(value.formatted(.number.precision(.fractionLength(0...1)))) in"
+}
+
+private func formattedMeters(_ value: Double) -> String {
+    "\(value.formatted(.number.precision(.fractionLength(0...3)))) m"
 }
 
 private enum PreviewState {

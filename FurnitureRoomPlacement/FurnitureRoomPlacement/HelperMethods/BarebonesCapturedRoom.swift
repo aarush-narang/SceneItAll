@@ -47,24 +47,32 @@ struct PlacedFurnitureObject: Codable, Identifiable {
     let furniture: Furniture
     var placement: FurniturePlacement
     let addedAt: String
+    let placedBy: String?
+    let rationale: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case furniture
         case placement
         case addedAt
+        case placedBy = "placed_by"
+        case rationale
     }
 
     init(
         id: String,
         furniture: Furniture,
         placement: FurniturePlacement,
-        addedAt: String
+        addedAt: String,
+        placedBy: String? = nil,
+        rationale: String? = nil
     ) {
         self.id = id
         self.furniture = furniture
         self.placement = placement
         self.addedAt = addedAt
+        self.placedBy = placedBy
+        self.rationale = rationale
     }
 
     init(from decoder: Decoder) throws {
@@ -72,6 +80,8 @@ struct PlacedFurnitureObject: Codable, Identifiable {
         id = try container.decode(String.self, forKey: .id)
         placement = try container.decode(FurniturePlacement.self, forKey: .placement)
         addedAt = try container.decode(String.self, forKey: .addedAt)
+        placedBy = try container.decodeIfPresent(String.self, forKey: .placedBy)
+        rationale = try container.decodeIfPresent(String.self, forKey: .rationale)
 
         if let savedFurniture = try? container.decode(SavedFurnitureSnapshot.self, forKey: .furniture) {
             furniture = Furniture(savedSnapshot: savedFurniture)
@@ -86,6 +96,8 @@ struct PlacedFurnitureObject: Codable, Identifiable {
         try container.encode(furniture.savedSnapshot, forKey: .furniture)
         try container.encode(placement, forKey: .placement)
         try container.encode(addedAt, forKey: .addedAt)
+        try container.encodeIfPresent(placedBy, forKey: .placedBy)
+        try container.encodeIfPresent(rationale, forKey: .rationale)
     }
 }
 
@@ -821,6 +833,31 @@ enum BarebonesRoomJSONSanitizer {
             withJSONObject: roomDictionary,
             options: [.prettyPrinted, .sortedKeys]
         )
+    }
+
+    static func placedObjects(fromDesignObjectsData data: Data) throws -> [PlacedFurnitureObject] {
+        try JSONDecoder().decode([PlacedFurnitureObject].self, from: data)
+    }
+
+    static func roomData(
+        byMergingObjectsFromDesignObjectsData designObjectsData: Data,
+        intoRoomData baseRoomData: Data
+    ) throws -> (roomData: Data, objects: [PlacedFurnitureObject]) {
+        let normalizedData = try normalizedRoomData(from: baseRoomData)
+        let existingObjects = try BarebonesRoomImportLoader.loadPlacedObjects(from: normalizedData)
+        let fetchedObjects = try placedObjects(fromDesignObjectsData: designObjectsData)
+        let mergedObjects = mergePlacedObjects(existing: existingObjects, fetched: fetchedObjects)
+        let updatedRoomData = try roomData(byUpdatingObjects: mergedObjects, in: normalizedData)
+        return (updatedRoomData, mergedObjects)
+    }
+
+    private static func mergePlacedObjects(
+        existing: [PlacedFurnitureObject],
+        fetched: [PlacedFurnitureObject]
+    ) -> [PlacedFurnitureObject] {
+        let existingIDs = Set(existing.map(\.id))
+        let newFetchedObjects = fetched.filter { !existingIDs.contains($0.id) }
+        return existing + newFetchedObjects
     }
 }
 

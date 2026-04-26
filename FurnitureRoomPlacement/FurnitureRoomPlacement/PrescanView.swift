@@ -140,7 +140,9 @@ struct OnboardingView: View {
             allowedContentTypes: [.json],
             allowsMultipleSelection: false
         ) { result in
-            handleImport(result)
+            Task {
+                await handleImport(result)
+            }
         }
         .alert("Import Failed", isPresented: $isShowingImportError) {
             Button("OK", role: .cancel) { }
@@ -149,7 +151,8 @@ struct OnboardingView: View {
         }
     }
 
-    private func handleImport(_ result: Result<[URL], Error>) {
+    @MainActor
+    private func handleImport(_ result: Result<[URL], Error>) async {
         do {
             guard let fileURL = try result.get().first else { return }
             let didAccess = fileURL.startAccessingSecurityScopedResource()
@@ -164,10 +167,16 @@ struct OnboardingView: View {
 
             switch importMode {
             case .barebones:
-                let normalizedData = try BarebonesRoomJSONSanitizer.normalizedRoomData(from: data)
-                scene = try BarebonesRoomImportLoader.loadScene(from: normalizedData)
-                importedRoomData = normalizedData
-                importedPlacedObjects = try BarebonesRoomImportLoader.loadPlacedObjects(from: normalizedData)
+                let fetchedObjects = try await fetchDesignObjects()
+                let fetchedObjectsData = try JSONEncoder().encode(fetchedObjects)
+                let mergedRoom = try BarebonesRoomJSONSanitizer.roomData(
+                    byMergingObjectsFromDesignObjectsData: fetchedObjectsData,
+                    intoRoomData: data
+                )
+
+                scene = try BarebonesRoomImportLoader.loadScene(from: mergedRoom.roomData)
+                importedRoomData = mergedRoom.roomData
+                importedPlacedObjects = mergedRoom.objects
             case .stripFurniture:
                 let strippedData = try BarebonesRoomJSONSanitizer.stripToEssentialSurfaces(from: data)
                 scene = try BarebonesRoomImportLoader.loadScene(from: strippedData)
@@ -181,6 +190,10 @@ struct OnboardingView: View {
             importErrorMessage = error.localizedDescription
             isShowingImportError = true
         }
+    }
+
+    private func fetchDesignObjects() async throws -> [PlacedFurnitureObject] {
+        try await FurnitureAPIClient.shared.fetchDesignObjects()
     }
 }
 
@@ -214,13 +227,20 @@ private struct ImportedRoomShellView: View {
     @State private var isShowingSaveExporter = false
     @State private var exportErrorMessage = ""
     @State private var isShowingExportError = false
+    @State private var syncErrorMessage = ""
+    @State private var isShowingSyncError = false
     @State private var hasRestoredSavedFurniture = false
     @State private var isShowingAssistant = false
+    @State private var isAssistantLoading = false
+    @State private var isPlacementCleanupLoading = false
+    @State private var agentSessionID: String?
     @State private var assistantDraft = ""
+    @State private var pendingPlacementPreview: [String: FurniturePlacement] = [:]
+    @State private var previewOriginalPlacements: [String: FurniturePlacement] = [:]
     @State private var assistantMessages: [ImportedRoomAssistantMessage] = [
         ImportedRoomAssistantMessage(
             role: .assistant,
-            text: "Ask about the current room layout. The latest sanitized JSON will be prepared when you send."
+            text: "Ask about the current room layout. Your message and the latest blueprint JSON will be sent to the agent."
         )
     ]
 
@@ -257,7 +277,13 @@ private struct ImportedRoomShellView: View {
                     isPresented: $isShowingAssistant,
                     draft: $assistantDraft,
                     messages: assistantMessages,
-                    onSend: handleAssistantSend
+                    isChatLoading: isAssistantLoading,
+                    isCleanupLoading: isPlacementCleanupLoading,
+                    hasPendingPlacementPreview: !pendingPlacementPreview.isEmpty,
+                    onSend: handleAssistantSend,
+                    onPlacementCleanup: handlePlacementCleanup,
+                    onAcceptPlacementChanges: acceptPlacementCleanupPreview,
+                    onDeclinePlacementChanges: declinePlacementCleanupPreview
                 )
             }
             .navigationTitle(title.isEmpty ? "Imported Room" : title)
@@ -310,6 +336,11 @@ private struct ImportedRoomShellView: View {
             } message: {
                 Text(exportErrorMessage)
             }
+            .alert("Sync Failed", isPresented: $isShowingSyncError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(syncErrorMessage)
+            }
             .onChange(of: hasOverlayedExternalUSDZ) { _, hasOverlay in
                 if !hasOverlay {
                     furnitureInteractionMode = .view
@@ -337,6 +368,9 @@ private struct ImportedRoomShellView: View {
                         scene: scene,
                         onFurnitureAdded: { placedObject in
                             placedObjects.append(placedObject)
+                            Task {
+                                await syncAddedFurnitureObject(placedObject)
+                            }
                         }
                     )
                 }
@@ -421,7 +455,7 @@ private struct ImportedRoomShellView: View {
 
     private func handleAssistantSend() {
         let trimmedPrompt = assistantDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPrompt.isEmpty else {
+        guard !trimmedPrompt.isEmpty, !isAssistantLoading, !isPlacementCleanupLoading else {
             return
         }
 
@@ -430,26 +464,18 @@ private struct ImportedRoomShellView: View {
         )
         assistantDraft = ""
 
-        do {
-            let request = try makeAssistantRequest(prompt: trimmedPrompt)
-            assistantMessages.append(
-                ImportedRoomAssistantMessage(
-                    role: .assistant,
-                    text: """
-                    Stubbed assistant payload prepared.
-                    Prompt: \(request.prompt)
-                    Sanitized JSON size: \(request.sanitizedJSONString.count) characters.
-                    Replace this branch with your LLM call when the agent endpoint is ready.
-                    """
-                )
-            )
-        } catch {
-            assistantMessages.append(
-                ImportedRoomAssistantMessage(
-                    role: .assistant,
-                    text: "I couldn’t prepare the room context: \(error.localizedDescription)"
-                )
-            )
+        Task {
+            await sendAssistantMessage(prompt: trimmedPrompt)
+        }
+    }
+
+    private func handlePlacementCleanup() {
+        guard !placedObjects.isEmpty, !isAssistantLoading, !isPlacementCleanupLoading, pendingPlacementPreview.isEmpty else {
+            return
+        }
+
+        Task {
+            await requestPlacementCleanupSuggestions()
         }
     }
 
@@ -467,6 +493,162 @@ private struct ImportedRoomShellView: View {
         )
     }
 
+    @MainActor
+    private func sendAssistantMessage(prompt: String) async {
+        isAssistantLoading = true
+        defer {
+            isAssistantLoading = false
+        }
+
+        do {
+            let request = try makeAssistantRequest(prompt: prompt)
+            let response = try await FurnitureAPIClient.shared.agentChat(
+                message: formattedAgentMessage(from: request),
+                sessionID: agentSessionID
+            )
+            agentSessionID = response.sessionID
+
+            if response.placements.isEmpty {
+                appendAssistantMessageIfNeeded(response.assistantText)
+            } else {
+                applyPlacementResponse(
+                    response,
+                    fallbackMessage: "Updated the room layout using the returned placement suggestions."
+                )
+            }
+        } catch {
+            assistantMessages.append(
+                ImportedRoomAssistantMessage(
+                    role: .assistant,
+                    text: "I couldn't reach the room assistant: \(error.localizedDescription)"
+                )
+            )
+        }
+    }
+
+    @MainActor
+    private func requestPlacementCleanupSuggestions() async {
+        isPlacementCleanupLoading = true
+        defer {
+            isPlacementCleanupLoading = false
+        }
+
+        do {
+            let request = try makeAssistantRequest(
+                prompt: """
+                Suggest improved placements for the furniture already in this room.
+                Focus on fixing hovering objects, objects intersecting other geometry, and objects that should sit against a wall but are floating away from it.
+                Return the revised placements in the structured `placements` field using the existing object ids and placement arrays, and summarize the reasoning briefly in `assistant_text`.
+                """
+            )
+            let response = try await FurnitureAPIClient.shared.agentChat(
+                message: formattedPlacementCleanupMessage(from: request),
+                sessionID: agentSessionID
+            )
+            agentSessionID = response.sessionID
+            applyPlacementResponse(
+                response,
+                fallbackMessage: "Previewing updated furniture placements. Use Accept or Decline to confirm."
+            )
+        } catch {
+            assistantMessages.append(
+                ImportedRoomAssistantMessage(
+                    role: .assistant,
+                    text: "I couldn't generate cleanup suggestions: \(error.localizedDescription)"
+                )
+            )
+        }
+    }
+
+    private func formattedAgentMessage(from request: ImportedRoomAssistantRequest) -> String {
+        """
+        User message:
+        \(request.prompt)
+
+        Current blueprint JSON:
+        \(request.sanitizedJSONString)
+        """
+    }
+
+    private func formattedPlacementCleanupMessage(from request: ImportedRoomAssistantRequest) -> String {
+        """
+        Placement cleanup task:
+        \(request.prompt)
+
+        Use the current object ids exactly as they appear in the JSON.
+        Only suggest updates for objects that need repositioning or reorientation.
+        Do not add or delete furniture.
+        Put only the human-readable summary in `assistant_text`.
+        Put all coordinate changes only in `placements`.
+
+        Current blueprint JSON:
+        \(request.sanitizedJSONString)
+        """
+    }
+
+    private func currentPlacedObjects() -> [PlacedFurnitureObject] {
+        placedObjects.map(currentPlacement(for:))
+    }
+
+    @MainActor
+    private func applyPlacementResponse(
+        _ response: AgentChatResponse,
+        fallbackMessage: String
+    ) {
+        let suggestedPlacements = response.placements.reduce(into: [String: FurniturePlacement]()) { partialResult, placement in
+            partialResult[placement.objectID] = placement.placement
+        }
+
+        guard !suggestedPlacements.isEmpty else {
+            appendAssistantMessageIfNeeded(response.assistantText)
+            return
+        }
+
+        let currentObjects = currentPlacedObjects()
+        previewOriginalPlacements = Dictionary(
+            uniqueKeysWithValues: currentObjects.map { ($0.id, $0.placement) }
+        )
+        pendingPlacementPreview = suggestedPlacements
+        placedObjects = applyingPlacements(suggestedPlacements, to: currentObjects)
+        applyPlacementsToScene(suggestedPlacements)
+        appendAssistantMessageIfNeeded(cleanAssistantSummary(from: response.assistantText) ?? fallbackMessage)
+    }
+
+    private func appendAssistantMessageIfNeeded(_ text: String) {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            return
+        }
+
+        assistantMessages.append(
+            ImportedRoomAssistantMessage(
+                role: .assistant,
+                text: trimmedText
+            )
+        )
+    }
+
+    private func cleanAssistantSummary(from text: String) -> String? {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            return nil
+        }
+
+        let blockedMarkers = [
+            "\"placements\"",
+            "\"assistant_text\"",
+            "\"tool_calls\"",
+            "```json",
+            "```"
+        ]
+
+        guard !blockedMarkers.contains(where: trimmedText.localizedCaseInsensitiveContains) else {
+            return nil
+        }
+
+        return trimmedText
+    }
+
     private func currentPlacement(for object: PlacedFurnitureObject) -> PlacedFurnitureObject {
         let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: object.id)
         guard let placedNode = scene.rootNode.childNode(withName: nodeName, recursively: true) else {
@@ -476,6 +658,95 @@ private struct ImportedRoomShellView: View {
         var updatedObject = object
         updatedObject.placement = FurniturePlacement(from: placedNode)
         return updatedObject
+    }
+
+    private func applyingPlacements(
+        _ placementsByObjectID: [String: FurniturePlacement],
+        to objects: [PlacedFurnitureObject]
+    ) -> [PlacedFurnitureObject] {
+        objects.map { object in
+            guard let updatedPlacement = placementsByObjectID[object.id] else {
+                return object
+            }
+
+            var updatedObject = object
+            updatedObject.placement = updatedPlacement
+            return updatedObject
+        }
+    }
+
+    @MainActor
+    private func applyPlacementsToScene(_ placementsByObjectID: [String: FurniturePlacement]) {
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = 0.25
+
+        for (objectID, placement) in placementsByObjectID {
+            let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: objectID)
+            guard let placedNode = scene.rootNode.childNode(withName: nodeName, recursively: true) else {
+                continue
+            }
+            placement.apply(to: placedNode)
+        }
+
+        SCNTransaction.commit()
+    }
+
+    @MainActor
+    private func acceptPlacementCleanupPreview() {
+        guard !pendingPlacementPreview.isEmpty else {
+            return
+        }
+
+        let updatedObjects = placedObjects
+        pendingPlacementPreview = [:]
+        previewOriginalPlacements = [:]
+
+        Task {
+            await persistPlacementUpdates(updatedObjects)
+        }
+    }
+
+    @MainActor
+    private func declinePlacementCleanupPreview() {
+        guard !previewOriginalPlacements.isEmpty else {
+            return
+        }
+
+        applyPlacementsToScene(previewOriginalPlacements)
+        placedObjects = applyingPlacements(previewOriginalPlacements, to: placedObjects)
+        pendingPlacementPreview = [:]
+        previewOriginalPlacements = [:]
+    }
+
+    @MainActor
+    private func syncAddedFurnitureObject(_ object: PlacedFurnitureObject) async {
+        do {
+            try await FurnitureAPIClient.shared.addObjectToDesign(
+                currentPlacement(for: object),
+                designName: resolvedDesignName
+            )
+        } catch {
+            syncErrorMessage = error.localizedDescription
+            isShowingSyncError = true
+        }
+    }
+
+    @MainActor
+    private func persistPlacementUpdates(_ objects: [PlacedFurnitureObject]) async {
+        do {
+            try await FurnitureAPIClient.shared.updateObjectsInDesign(
+                objects,
+                designName: resolvedDesignName
+            )
+        } catch {
+            syncErrorMessage = error.localizedDescription
+            isShowingSyncError = true
+        }
+    }
+
+    private var resolvedDesignName: String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? "Imported Room" : trimmedTitle
     }
 
     private func restoreSavedFurnitureIfNeeded() async {
@@ -667,7 +938,7 @@ private struct ImportedRoomSceneView: UIViewRepresentable {
 
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 0
-            draggedNode.eulerAngles.x -= Float(rotation)
+            draggedNode.eulerAngles.y -= Float(rotation)
             SCNTransaction.commit()
         }
 
