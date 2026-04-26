@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.app import app
 
 # A known IKEA item confirmed in the DB
 KNOWN_ID = "00069768"

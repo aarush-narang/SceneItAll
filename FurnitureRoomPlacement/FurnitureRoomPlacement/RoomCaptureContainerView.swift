@@ -10,6 +10,7 @@ import RoomPlan
 import UIKit
 import Combine
 import SceneKit
+import ARKit
 
 struct RoomCaptureContainerView: View {
     @Environment(\.dismiss) private var dismiss
@@ -41,6 +42,14 @@ struct RoomCaptureContainerView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
+                        .padding(.bottom, 32)
+
+                        Button("Match Furniture") {
+                            Task { await model.uploadAndMatch() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .tint(.green)
                         .padding(.bottom, 32)
                     }
                 }
@@ -131,8 +140,14 @@ final class RoomCaptureModel: ObservableObject {
     @Published var isShowingShareSheet = false
     @Published var isShowingError = false
     @Published var errorMessage = ""
+    @Published var matchedScene: MatchedScene?
 
     var exportURL: URL?
+
+    let frameSampler = FrameSampler()
+    private let uploadClient = ScanUploadClient(
+        baseURL: URL(string: "http://10.30.77.23:8000")!
+    )
 
     private weak var roomCaptureView: RoomCaptureView?
     private let roomCaptureSessionConfig = RoomCaptureSession.Configuration()
@@ -147,8 +162,14 @@ final class RoomCaptureModel: ObservableObject {
         finalResults = nil
         canExport = false
         isProcessing = false
+        matchedScene = nil
         isScanning = true
         roomCaptureView.captureSession.run(configuration: roomCaptureSessionConfig)
+
+        frameSampler.reset()
+        if #available(iOS 17.0, *) {
+            roomCaptureView.captureSession.arSession.delegate = frameSampler
+        }
     }
 
     func stopSession() {
@@ -242,6 +263,34 @@ final class RoomCaptureModel: ObservableObject {
         }
 
         try jsonData.write(to: url)
+    }
+
+    func uploadAndMatch() async {
+        guard let finalResults else { return }
+        isProcessing = true
+        defer { isProcessing = false }
+        do {
+            let scene = try await uploadClient.upload(
+                room: finalResults,
+                frames: frameSampler.snapshot()
+            )
+            matchedScene = scene
+            let matched = scene.objects.filter { $0.isMatched }.count
+            let whitebox = scene.objects.filter { !$0.isMatched }.count
+            print("matched \(scene.objects.count) objects (\(matched) real, \(whitebox) white-box):")
+            for obj in scene.objects {
+                let target: String
+                if let pid = obj.matchedProductId {
+                    target = "\(pid) (\(obj.matchedProductName ?? "?"))"
+                } else {
+                    target = "WHITE_BOX"
+                }
+                print("  • \(obj.detectedId) [\(obj.refinedCategory)] → \(target)")
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+            isShowingError = true
+        }
     }
 
     func handleProcessedResult(_ processedResult: CapturedRoom) {

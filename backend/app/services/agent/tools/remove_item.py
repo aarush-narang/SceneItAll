@@ -33,13 +33,13 @@ class RemoveItemOutput(BaseModel):
 )
 async def remove_item(ctx: AgentContext, inp: RemoveItemInput) -> RemoveItemOutput:
     design = await ctx.load_design()
-    if not any(p.get("id") == inp.instance_id for p in design.get("placed_items", [])):
+    if not any(p.get("id") == inp.instance_id for p in design.get("objects", [])):
         raise ValueError(f"placed item {inp.instance_id} not found in design")
 
     await designs_col().update_one(
         {"_id": ctx.design_id},
         {
-            "$pull": {"placed_items": {"id": inp.instance_id}},
+            "$pull": {"objects": {"id": inp.instance_id}},
             "$set": {"updated_at": datetime.now(timezone.utc)},
         },
     )

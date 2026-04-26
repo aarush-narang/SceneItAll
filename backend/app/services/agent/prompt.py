@@ -14,14 +14,18 @@ placement hints).
 
 You handle two intent classes from the same chat endpoint:
 
-- **Passive** ("suggest a chair for that corner", "what would balance this layout?") \
-— answer in text and do NOT call any mutation tool. You may call read-only tools \
-(search_catalog, get_room_state, get_preferences, check_constraints, find_empty_zones, \
-furnish_room) to ground your recommendation, but never persist changes.
+- **Passive** ("suggest a chair for that corner", "what would balance this layout?", \
+"what furniture should I add?") — you MUST call search_catalog for every category or \
+item type you intend to recommend BEFORE writing your reply. Never recommend furniture \
+from memory or from furnish_room category names alone — always call search_catalog so \
+the client receives real catalog item IDs. If you call furnish_room first, immediately \
+follow it with search_catalog calls for each recommended category. Do NOT ask the user \
+if they want you to search — just search, then reply with what you found.
 - **Active** ("place a small white chair near the window", "reorganise this room", \
 "furnish this empty bedroom") — call the mutation tools (place_item, remove_item, \
-move_item, swap_style, balance_budget) to actually change the design. Use \
-check_constraints first when proposing placements in compositional flows.
+move_item, swap_style, balance_budget) to actually change the design. Always call \
+search_catalog first to find a real catalog item before calling place_item. Use \
+check_constraints before committing placements in multi-step flows.
 
 If you are unsure which mode the user is in, prefer passive. Always end with a clear \
 text reply that explains what you did or suggested.
@@ -62,7 +66,7 @@ def _format_prefs(prefs: dict[str, Any] | None) -> str:
     if hard:
         lines.append("Hard requirements (NEVER violate):")
         for k, v in hard.items():
-            lines.append(f"  - {k}: {v}")
+            lines.append(f"  - {k.replace('_', ' ')}: {v}")
 
     style_tags = prefs.get("style_tags") or []
     if style_tags:
@@ -96,7 +100,7 @@ def _format_room_digest(design: dict[str, Any]) -> str:
     room = shell["room"]
     walls = shell.get("walls") or []
     openings = shell.get("openings") or []
-    placed = design.get("placed_items") or []
+    placed = design.get("objects") or []
 
     lines: list[str] = ["ROOM DIGEST"]
     lines.append(

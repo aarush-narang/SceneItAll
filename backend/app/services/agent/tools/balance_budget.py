@@ -21,7 +21,7 @@ class BalanceBudgetInput(BaseModel):
     instance_ids: list[str] = Field(
         default_factory=list,
         description=(
-            "Optional subset of placed_items.id to consider. Empty = consider "
+            "Optional subset of objects.id to consider. Empty = consider "
             "every placed item that's currently over the cap."
         ),
     )
@@ -86,7 +86,7 @@ async def balance_budget(
     ctx: AgentContext, inp: BalanceBudgetInput
 ) -> BalanceBudgetOutput:
     design = await ctx.load_design()
-    placed = design.get("placed_items", []) or []
+    placed = design.get("objects", []) or []
     candidates = (
         set(inp.instance_ids) if inp.instance_ids else {p["id"] for p in placed}
     )
@@ -144,12 +144,12 @@ async def balance_budget(
             continue
 
         await designs_col().update_one(
-            {"_id": ctx.design_id, "placed_items.id": item["id"]},
+            {"_id": ctx.design_id, "objects.id": item["id"]},
             {
                 "$set": {
-                    "placed_items.$.furniture": new_snapshot,
-                    "placed_items.$.placed_by": "agent",
-                    "placed_items.$.rationale": f"Budget swap (≤{inp.max_price_per_item})",
+                    "objects.$.furniture": new_snapshot,
+                    "objects.$.placed_by": "agent",
+                    "objects.$.rationale": f"Budget swap (≤{inp.max_price_per_item})",
                     "updated_at": datetime.now(timezone.utc),
                 }
             },

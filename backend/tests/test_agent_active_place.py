@@ -4,7 +4,7 @@ Gemini is stubbed to issue one `place_item` call against a real catalog id and
 a known-valid pose, then return a text confirmation. Assertions:
 
 - `mutations.placements_added` contains the new PlacedObject
-- The design's `placed_items` array got the $push in Mongo
+- The design's `objects` array got the $push in Mongo
 - The catalog id matches
 """
 
@@ -46,7 +46,7 @@ def _empty_bedroom_doc(*, design_id: str, user_id: str) -> dict:
             "walls": [],
             "openings": [],
         },
-        "placed_items": [],
+        "objects": [],
         "created_at": now,
         "updated_at": now,
         "deleted_at": None,
@@ -101,8 +101,8 @@ async def test_active_place_item_persists_and_reports(monkeypatch):
 
         # Design got the $push
         doc = await db.find_one({"_id": design_id})
-        assert len(doc["placed_items"]) == 1
-        assert doc["placed_items"][0]["furniture"]["id"] == KNOWN_FURNITURE_ID
-        assert doc["placed_items"][0]["placed_by"] == "agent"
+        assert len(doc["objects"]) == 1
+        assert doc["objects"][0]["furniture"]["id"] == KNOWN_FURNITURE_ID
+        assert doc["objects"][0]["placed_by"] == "agent"
     finally:
         await db.delete_one({"_id": design_id})

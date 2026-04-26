@@ -113,7 +113,7 @@ class CaptureMetadata(BaseModel):
 
 class RoomShell(BaseModel):
     """Static room geometry from a single RoomPlan capture. Combined with
-    `Design.placed_items`, this is the full scene the iOS client renders."""
+    `Design.objects`, this is the full scene the iOS client renders."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -133,7 +133,7 @@ class Design(BaseModel):
     name: str
     preference_profile_id: str | None = None
     shell: RoomShell
-    placed_items: list[PlacedObject] = Field(default_factory=list)
+    objects: list[PlacedObject] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None
@@ -147,7 +147,7 @@ class DesignPublic(BaseModel):
     name: str
     preference_profile_id: str | None = None
     shell: RoomShell
-    placed_items: list[PlacedObject] = Field(default_factory=list)
+    objects: list[PlacedObject] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = None
@@ -156,18 +156,18 @@ class DesignPublic(BaseModel):
     def from_doc(cls, doc: dict) -> "DesignPublic":
         doc = dict(doc)
         doc["id"] = doc.pop("_id", doc.get("id", ""))
+        if doc.get("preference_profile_id") is not None:
+            doc["preference_profile_id"] = str(doc["preference_profile_id"])
         return cls(**doc)
 
 
 class DesignCreateRequest(BaseModel):
-    """Payload for POST /designs. `shell` + `placed_items` together represent
-    the raw RoomPlan capture; `objects` from the iOS export maps to `placed_items`."""
+    """Payload for POST /designs. `shell` + `objects` are the raw RoomPlan capture."""
 
     user_id: str
     name: str
-    preference_profile_id: str | None = None
     shell: RoomShell
-    placed_items: list[PlacedObject] = Field(default_factory=list)
+    objects: list[PlacedObject] = Field(default_factory=list)
 
 
 class DesignPatchRequest(BaseModel):

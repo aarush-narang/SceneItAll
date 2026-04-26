@@ -101,13 +101,13 @@ def _shell(*, walls=(), openings=(), polygon=None) -> dict:
     }
 
 
-def _design(*, placed_items=(), **shell_kwargs) -> dict:
+def _design(*, objects=(), **shell_kwargs) -> dict:
     return {
         "_id": str(uuid4()),
         "user_id": "test-user",
         "name": "Test Design",
         "shell": _shell(**shell_kwargs),
-        "placed_items": list(placed_items),
+        "objects": list(objects),
     }
 
 
@@ -186,7 +186,7 @@ async def test_validate_collides_with_existing():
     existing = _placed_object(position=(2.0, 0.0, 2.0))
     ok, msg = await validate_placement(
         _placed_object(position=(2.0, 0.0, 2.0)),
-        _design(placed_items=[_placed_doc(existing)]),
+        _design(objects=[_placed_doc(existing)]),
     )
     assert not ok
     assert "collides" in msg
@@ -233,7 +233,7 @@ async def test_validate_excludes_self_on_update():
     existing = _placed_object(id_=instance_id, position=(2.0, 0.0, 2.0))
     moved = _placed_object(id_=instance_id, position=(2.0, 0.0, 2.0))  # no actual move
     ok, msg = await validate_placement(
-        moved, _design(placed_items=[_placed_doc(existing)])
+        moved, _design(objects=[_placed_doc(existing)])
     )
     assert ok, msg
 
