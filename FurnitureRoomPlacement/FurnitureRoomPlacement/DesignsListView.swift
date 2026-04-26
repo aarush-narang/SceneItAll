@@ -214,6 +214,9 @@ struct DesignsListView: View {
             ForEach(viewModel.filteredDesigns) { design in
                 DesignCard(
                     design: design,
+                    onDelete: {
+                        Task { await viewModel.deleteDesign(design) }
+                    },
                     isLoading: viewModel.isLoadingDesignID == design.id
                 ) {
                     Task { await viewModel.openDesignForEditing(design) }
@@ -295,6 +298,8 @@ private struct RefreshableScrollView<Content: View>: UIViewRepresentable {
 private struct DesignCard: View {
     let design: DesignSummary
     let onDelete: () -> Void
+    let isLoading: Bool
+    let onEdit: () -> Void
     @State private var isPressed = false
 
     var body: some View {
@@ -349,12 +354,24 @@ private struct DesignCard: View {
                                 .shadow(color: .red.opacity(0.28), radius: 6, y: 2)
                         }
                         .buttonStyle(.plain)
+                        .disabled(isLoading)
 
-                        Image(systemName: "pencil")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.primary)
+                        Button(action: onEdit) {
+                            Group {
+                                if isLoading {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                        .tint(.primary)
+                                } else {
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                }
+                            }
                             .frame(width: 32, height: 32)
                             .background(Color(.secondarySystemBackground), in: Circle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.top, 2)
