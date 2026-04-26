@@ -29,20 +29,43 @@ def embed_text_gemini(text: str) -> list[float]:
     return result.embeddings[0].values
 
 
-_CAPTION_PROMPT = (
+_CAPTION_PROMPT_BASE = (
     "You are matching a piece of furniture in a room scan against an IKEA catalog. "
     "Describe ONLY the foreground furniture item in 1-2 sentences. "
-    "Mention type, primary material, color, style, and any distinctive shape or features. "
+    "Focus on primary material, color, leg style, back style, cushion presence, "
+    "and any distinctive shape or structural features. "
     "Do not describe the background or surroundings. Output the description only."
 )
 
+_CAPTION_PROMPT_WITH_CATEGORY = (
+    "You are matching a piece of furniture in a room scan against an IKEA catalog. "
+    "RoomPlan has identified this object as a {category}. "
+    "Describe ONLY the foreground {category} in 1-2 sentences. "
+    "Focus on primary material, color, leg style, back style, cushion presence, "
+    "and any distinctive shape or structural features that distinguish this specific {category}. "
+    "Do not describe the background, surroundings, or other furniture nearby. "
+    "Output the description only."
+)
 
-def caption_image_gemini(image: Image.Image, model: str = "gemini-2.0-flash") -> str:
-    """One-shot caption of a single image via Gemini Flash. Returns plain text
-    suitable for embedding via `embed_text_gemini`. Caller should encode the
-    image to JPEG/PNG bytes — Gemini handles either."""
+
+def caption_image_gemini(
+    image: Image.Image,
+    category: str | None = None,
+    model: str = "gemini-2.0-flash",
+) -> str:
+    """One-shot caption of a single image via Gemini Flash.
+
+    Pass `category` (the RoomPlan object category, e.g. "chair") to anchor
+    the description to the correct furniture type — critical when the frame
+    contains multiple furniture types in close proximity.
+    """
     import io
     from google.genai import types
+
+    if category:
+        prompt = _CAPTION_PROMPT_WITH_CATEGORY.format(category=category)
+    else:
+        prompt = _CAPTION_PROMPT_BASE
 
     client = _get_gemini()
     buf = io.BytesIO()
@@ -51,7 +74,7 @@ def caption_image_gemini(image: Image.Image, model: str = "gemini-2.0-flash") ->
 
     response = client.models.generate_content(
         model=model,
-        contents=[image_part, _CAPTION_PROMPT],
+        contents=[image_part, prompt],
     )
     return (response.text or "").strip()
 
