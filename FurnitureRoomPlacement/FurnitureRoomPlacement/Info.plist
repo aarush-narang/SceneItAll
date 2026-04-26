@@ -2,8 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>FurnitureDesignID</key>
+	<string>0a1f9453-651e-4a30-8e58-c2d354cd157c</string>
 	<key>FurnitureAPIBaseURL</key>
-	<string>https://poison-groundwater-states-excess.trycloudflare.com</string>
+	<string>https://stations-creativity-budget-sense.trycloudflare.com</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera and LiDAR sensor to scan your room.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

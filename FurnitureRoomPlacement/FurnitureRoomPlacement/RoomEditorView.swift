@@ -112,6 +112,7 @@ struct RoomEditorView: View {
             .task {
                 await viewModel.restoreSavedFurnitureIfNeeded()
             }
+            .edgesIgnoringSafeArea(.bottom)
         }
     }
 

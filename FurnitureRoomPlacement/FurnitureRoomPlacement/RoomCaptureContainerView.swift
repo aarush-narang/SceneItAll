@@ -15,11 +15,13 @@ import ARKit
 struct RoomCaptureContainerView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = RoomCaptureModel()
+    @State private var captureViewID = UUID()
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 RoomCaptureViewRepresentable(model: model)
+                    .id(captureViewID)
                     .ignoresSafeArea()
 
                 if model.isProcessing {
@@ -77,7 +79,7 @@ struct RoomCaptureContainerView: View {
         }
         .interactiveDismissDisabled(model.isScanning)
         .onAppear {
-            model.startSession()
+            captureViewID = UUID()
         }
         .onDisappear {
             model.stopSessionIfNeeded()
@@ -104,17 +106,17 @@ struct RoomCaptureViewRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> RoomCaptureView {
         let roomCaptureView = RoomCaptureView(frame: .zero)
-        model.attach(to: roomCaptureView)
         roomCaptureView.captureSession.delegate = context.coordinator
         roomCaptureView.delegate = context.coordinator
+        model.attach(to: roomCaptureView)
+        DispatchQueue.main.async {
+            model.startSession()
+        }
         return roomCaptureView
     }
 
     func updateUIView(_ uiView: RoomCaptureView, context: Context) {
-        model.attach(to: uiView)
         context.coordinator.model = model
-        uiView.captureSession.delegate = context.coordinator
-        uiView.delegate = context.coordinator
     }
 
     static func dismantleUIView(_ uiView: RoomCaptureView, coordinator: RoomCaptureCoordinator) {
@@ -145,9 +147,13 @@ final class RoomCaptureModel: ObservableObject {
     var exportURL: URL?
 
     let frameSampler = FrameSampler()
-    private let uploadClient = ScanUploadClient(
-        baseURL: URL(string: "http://10.30.77.23:8000")!
-    )
+    private let uploadClient: ScanUploadClient = {
+        if let configured = Bundle.main.object(forInfoDictionaryKey: "FurnitureAPIBaseURL") as? String,
+           let url = URL(string: configured) {
+            return ScanUploadClient(baseURL: url)
+        }
+        return ScanUploadClient(baseURL: URL(string: "http://127.0.0.1:8000")!)
+    }()
 
     private weak var roomCaptureView: RoomCaptureView?
     private let roomCaptureSessionConfig = RoomCaptureSession.Configuration()
@@ -163,6 +169,30 @@ final class RoomCaptureModel: ObservableObject {
         canExport = false
         isProcessing = false
         matchedScene = nil
+
+        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        switch cameraStatus {
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                Task { @MainActor in
+                    if granted {
+                        self?.beginCapture()
+                    } else {
+                        self?.errorMessage = "Camera access is required to scan a room. Enable it in Settings > Privacy > Camera."
+                        self?.isShowingError = true
+                    }
+                }
+            }
+        case .authorized:
+            beginCapture()
+        default:
+            errorMessage = "Camera access is required to scan a room. Enable it in Settings > Privacy > Camera."
+            isShowingError = true
+        }
+    }
+
+    private func beginCapture() {
+        guard let roomCaptureView else { return }
         isScanning = true
         roomCaptureView.captureSession.run(configuration: roomCaptureSessionConfig)
 
@@ -319,7 +349,20 @@ final class RoomCaptureCoordinator: NSObject, RoomCaptureViewDelegate, RoomCaptu
 
     func captureView(didPresent processedResult: CapturedRoom, error: Error?) {
         Task { @MainActor in
+            if let error {
+                model.errorMessage = "Processing error: \(error.localizedDescription)"
+                model.isShowingError = true
+            }
             model.handleProcessedResult(processedResult)
+        }
+    }
+
+    func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: (any Error)?) {
+        if let error {
+            Task { @MainActor in
+                model.errorMessage = "Scan session ended with error: \(error.localizedDescription)"
+                model.isShowingError = true
+            }
         }
     }
 }

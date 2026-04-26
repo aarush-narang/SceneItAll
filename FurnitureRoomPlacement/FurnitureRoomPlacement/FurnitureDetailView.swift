@@ -13,6 +13,7 @@ struct FurnitureCatalogListView: View {
     @State private var selectedFurniture: Furniture?
     @State private var loadErrorMessage = ""
     @State private var isShowingLoadError = false
+    @State private var closeFurnitureSheet = false
 
     var body: some View {
         FurnitureSearchView(
@@ -27,7 +28,7 @@ struct FurnitureCatalogListView: View {
         )
         .navigationTitle("Furniture Catalog")
         .sheet(item: $selectedFurniture) { furniture in
-            FurnitureDetailView(furniture: furniture) { localUSDZURL in
+            FurnitureDetailView(closeSheet: $closeFurnitureSheet, furniture: furniture) { localUSDZURL in
                 let objectID = UUID().uuidString
                 let addSuccess = BarebonesRoomSceneBuilder.overlayExternalUSDZ(
                     on: scene, fileURL: localUSDZURL, overlayIdentifier: objectID
@@ -45,7 +46,6 @@ struct FurnitureCatalogListView: View {
                     )
                     onFurnitureAdded(addedObject)
                     hasOverlayedExternalUSDZ = true
-                    showFurnitureCatalog = false
                 }
                 selectedFurniture = nil
             }
@@ -72,8 +72,8 @@ struct FurnitureCatalogListView: View {
 // MARK: - Furniture Detail View
 
 struct FurnitureDetailView: View {
-    @Environment(\.dismiss) private var dismiss
-
+//    @Environment(\.dismiss) private var dismiss
+    @Binding var closeSheet: Bool
     let furniture: Furniture
     let onAdd: (URL) -> Void
 
@@ -201,7 +201,10 @@ struct FurnitureDetailView: View {
 
     private var addButton: some View {
         Button {
-            Task { await addToRoom() }
+            Task {
+                await addToRoom()
+            }
+            closeSheet = true
         } label: {
             Group {
                 if isAddingToRoom {
@@ -316,7 +319,7 @@ struct FurnitureDetailView: View {
             isAddingToRoom = true
             let localURL = try await resolvedUSDZURL()
             onAdd(localURL)
-            dismiss()
+            closeSheet = true
         } catch {
             actionErrorMessage = error.localizedDescription
             isShowingActionError = true
