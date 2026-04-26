@@ -102,6 +102,13 @@ final class FurnitureAPIClient {
         )
     }
 
+    func deleteDesign(id: String) async throws {
+        let url = baseURL
+            .appending(path: "/designs")
+            .appending(path: id)
+        try await sendRequest(url: url, method: "DELETE")
+    }
+
     func addObjectToDesign(
         _ object: PlacedFurnitureObject,
         designID: String? = nil,
@@ -209,6 +216,28 @@ final class FurnitureAPIClient {
         } catch {
             throw FurnitureAPIClientError.encodingError(error.localizedDescription)
         }
+
+        let data: Data
+        let response: URLResponse
+
+        do {
+            log("Sending \(method) request to \(url.absoluteString)")
+            (data, response) = try await session.data(for: request)
+        } catch let error as URLError {
+            log("Transport error for \(method) \(url.absoluteString): \(error.localizedDescription)")
+            throw FurnitureAPIClientError.transportError(url: url, underlying: error)
+        }
+
+        try validate(response: response, data: data)
+        if let httpResponse = response as? HTTPURLResponse {
+            log("Received status \(httpResponse.statusCode) from \(method) \(url.absoluteString)")
+        }
+    }
+
+    private func sendRequest(url: URL, method: String) async throws {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let data: Data
         let response: URLResponse
