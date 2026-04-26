@@ -123,6 +123,7 @@ final class DesignsListViewModel: ObservableObject {
             defer { if didAccess { fileURL.stopAccessingSecurityScopedResource() } }
 
             let data = try Data(contentsOf: fileURL)
+            let importedName = fileURL.deletingPathExtension().lastPathComponent
             let scene: SCNScene
 
             switch importMode {
@@ -133,17 +134,26 @@ final class DesignsListViewModel: ObservableObject {
                     byMergingObjectsFromDesignObjectsData: fetchedObjectsData,
                     intoRoomData: data
                 )
+                let createdDesign = try await FurnitureAPIClient.shared.createDesign(
+                    name: importedName,
+                    barebonesJSONData: mergedRoom.roomData,
+                    objects: mergedRoom.objects,
+                    userID: UserSession.shared.userID
+                )
+                designs.insert(DesignSummary(remoteDesign: createdDesign), at: 0)
+                hasLoadedDesigns = true
+
                 scene = try BarebonesRoomImportLoader.loadScene(from: mergedRoom.roomData)
                 importedRoomData = mergedRoom.roomData
                 importedPlacedObjects = mergedRoom.objects
-            case .stripFurniture:
+            case .stripFurniture: // This will never happen since we removed the third option in the list when + button is clicked
                 let strippedData = try BarebonesRoomJSONSanitizer.stripToEssentialSurfaces(from: data)
                 scene = try BarebonesRoomImportLoader.loadScene(from: strippedData)
                 importedRoomData = strippedData
                 importedPlacedObjects = []
             }
 
-            importedFileName = fileURL.deletingPathExtension().lastPathComponent
+            importedFileName = importedName
             importedScene = scene
         } catch {
             importErrorMessage = error.localizedDescription
