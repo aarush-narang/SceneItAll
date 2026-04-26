@@ -77,12 +77,13 @@ struct DesignsListView: View {
             .fullScreenCover(isPresented: $viewModel.isShowingScan) {
                 RoomCaptureContainerView()
             }
-            .fullScreenCover(item: $viewModel.importedScene) { scene in
+            .fullScreenCover(item: $viewModel.activeEditorSession) { session in
                 RoomEditorView(
-                    scene: scene,
-                    title: viewModel.importedFileName,
-                    baseRoomData: viewModel.importedRoomData,
-                    initialPlacedObjects: viewModel.importedPlacedObjects
+                    scene: session.scene,
+                    title: session.title,
+                    baseRoomData: session.baseRoomData,
+                    initialPlacedObjects: session.initialPlacedObjects,
+                    designID: session.designID
                 )
             }
             .sheet(isPresented: $viewModel.isShowingUnsupportedDeviceSheet) {
@@ -125,6 +126,11 @@ struct DesignsListView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(viewModel.designsLoadErrorMessage)
+            }
+            .alert("Couldn't Open Design", isPresented: $viewModel.isShowingDesignOpenError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(viewModel.designOpenErrorMessage)
             }
             .alert("Couldn't Save Preferences", isPresented: $viewModel.isShowingStylePreferencesError) {
                 Button("OK", role: .cancel) { }
@@ -206,10 +212,11 @@ struct DesignsListView: View {
             spacing: 12
         ) {
             ForEach(viewModel.filteredDesigns) { design in
-                DesignCard(design: design) {
-                    Task {
-                        await viewModel.deleteDesign(design)
-                    }
+                DesignCard(
+                    design: design,
+                    isLoading: viewModel.isLoadingDesignID == design.id
+                ) {
+                    Task { await viewModel.openDesignForEditing(design) }
                 }
             }
         }

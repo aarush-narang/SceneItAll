@@ -6,12 +6,19 @@ struct RoomEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: RoomEditorViewModel
 
-    init(scene: SCNScene, title: String, baseRoomData: Data, initialPlacedObjects: [PlacedFurnitureObject]) {
+    init(
+        scene: SCNScene,
+        title: String,
+        baseRoomData: Data,
+        initialPlacedObjects: [PlacedFurnitureObject],
+        designID: String
+    ) {
         _viewModel = StateObject(wrappedValue: RoomEditorViewModel(
             scene: scene,
             title: title,
             baseRoomData: baseRoomData,
-            initialPlacedObjects: initialPlacedObjects
+            initialPlacedObjects: initialPlacedObjects,
+            designID: designID
         ))
     }
 
@@ -46,7 +53,7 @@ struct RoomEditorView: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
 
-                    editorToolbar
+                    editorActions
                 }
             }
             .navigationTitle(viewModel.resolvedTitle)
@@ -116,41 +123,40 @@ struct RoomEditorView: View {
         }
     }
 
-    // MARK: - Bottom Toolbar
+    // MARK: - Editor Actions
 
-    private var editorToolbar: some View {
-        HStack(spacing: 8) {
-            EditorToolbarButton(icon: "square.grid.2x2", label: "Catalog") {
-                viewModel.showFurnitureCatalog = true
-            }
+    private var editorActions: some View {
+        HStack {
+            Spacer()
 
-            EditorToolbarButton(
-                icon: viewModel.furnitureInteractionMode == .move
-                    ? "checkmark.circle" : "arrow.up.and.down.and.arrow.left.and.right",
-                label: viewModel.furnitureInteractionMode == .move ? "Done" : "Move"
-            ) {
-                viewModel.toggleMoveMode()
-            }
-            .opacity(viewModel.hasOverlayedExternalUSDZ ? 1 : 0.4)
-            .disabled(!viewModel.hasOverlayedExternalUSDZ)
+            VStack(alignment: .trailing, spacing: 10) {
+                EditorToolbarButton(icon: "square.grid.2x2", label: "Catalog") {
+                    viewModel.showFurnitureCatalog = true
+                }
 
-            EditorToolbarButton(icon: "square.and.arrow.up", label: "Export") {
-                viewModel.saveRoomJSON()
+                EditorToolbarButton(
+                    icon: viewModel.furnitureInteractionMode == .move
+                        ? "checkmark.circle" : "arrow.up.and.down.and.arrow.left.and.right",
+                    label: viewModel.furnitureInteractionMode == .move ? "Done" : "Move"
+                ) {
+                    viewModel.toggleMoveMode()
+                }
+                .opacity(viewModel.hasOverlayedExternalUSDZ ? 1 : 0.4)
+                .disabled(!viewModel.hasOverlayedExternalUSDZ)
+
+                EditorToolbarButton(icon: "square.and.arrow.up", label: "Export") {
+                    viewModel.saveRoomJSON()
+                }
+                .opacity(viewModel.placedObjects.isEmpty ? 0.4 : 1)
+                .disabled(viewModel.placedObjects.isEmpty)
             }
-            .opacity(viewModel.placedObjects.isEmpty ? 0.4 : 1)
-            .disabled(viewModel.placedObjects.isEmpty)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
         .padding(.bottom, 32)
-        .background(
-            Color(.systemBackground)
-                .shadow(color: .black.opacity(0.06), radius: 8, y: -2)
-        )
     }
 }
 
-// MARK: - Toolbar Button
+// MARK: - Action Button
 
 private struct EditorToolbarButton: View {
     let icon: String
@@ -159,17 +165,18 @@ private struct EditorToolbarButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
+            HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 20))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.primary)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(.regularMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         }
         .buttonStyle(.plain)
     }

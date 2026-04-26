@@ -12,6 +12,7 @@ final class RoomEditorViewModel: ObservableObject {
     let scene: SCNScene
     let title: String
     let baseRoomData: Data
+    let designID: String
 
     @Published var placedObjects: [PlacedFurnitureObject]
     @Published var hasOverlayedExternalUSDZ: Bool
@@ -58,10 +59,17 @@ final class RoomEditorViewModel: ObservableObject {
         return trimmed.isEmpty ? "BarebonesRoom" : "\(trimmed)_furnished"
     }
 
-    nonisolated init(scene: SCNScene, title: String, baseRoomData: Data, initialPlacedObjects: [PlacedFurnitureObject]) {
+    nonisolated init(
+        scene: SCNScene,
+        title: String,
+        baseRoomData: Data,
+        initialPlacedObjects: [PlacedFurnitureObject],
+        designID: String
+    ) {
         self.scene = scene
         self.title = title
         self.baseRoomData = baseRoomData
+        self.designID = designID
         self.initialPlacedObjects = initialPlacedObjects
         self._placedObjects = Published(initialValue: initialPlacedObjects)
         self._hasOverlayedExternalUSDZ = Published(initialValue: !initialPlacedObjects.isEmpty)
@@ -126,6 +134,7 @@ final class RoomEditorViewModel: ObservableObject {
         do {
             try await FurnitureAPIClient.shared.addObjectToDesign(
                 currentPlacement(for: object),
+                designID: designID,
                 designName: resolvedTitle
             )
         } catch {
@@ -189,7 +198,8 @@ final class RoomEditorViewModel: ObservableObject {
                 Current blueprint JSON:
                 \(request.sanitizedJSONString)
                 """,
-                sessionID: agentSessionID
+                sessionID: agentSessionID,
+                designID: designID
             )
             agentSessionID = response.sessionID
             if response.placements.isEmpty {
@@ -226,7 +236,8 @@ final class RoomEditorViewModel: ObservableObject {
                 Current blueprint JSON:
                 \(request.sanitizedJSONString)
                 """,
-                sessionID: agentSessionID
+                sessionID: agentSessionID,
+                designID: designID
             )
             agentSessionID = response.sessionID
             applyPlacementResponse(response, fallbackMessage: "Previewing updated furniture placements. Use Accept or Decline to confirm.")
@@ -293,7 +304,11 @@ final class RoomEditorViewModel: ObservableObject {
 
     private func persistPlacementUpdates(_ objects: [PlacedFurnitureObject]) async {
         do {
-            try await FurnitureAPIClient.shared.updateObjectsInDesign(objects, designName: resolvedTitle)
+            try await FurnitureAPIClient.shared.updateObjectsInDesign(
+                objects,
+                designID: designID,
+                designName: resolvedTitle
+            )
         } catch {
             syncErrorMessage = error.localizedDescription
             isShowingSyncError = true

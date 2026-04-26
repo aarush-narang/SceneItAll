@@ -285,6 +285,19 @@ enum BarebonesRoomSceneBuilder {
         return scene
     }
 
+    static func scene(for room: SanitizedRoomPayload) -> SCNScene {
+        let scene = SCNScene()
+        scene.background.contents = UIColor(white: 0.6, alpha: 1.0)
+        let rootNode = scene.rootNode
+
+        addSanitizedFloor(from: room.room, to: rootNode)
+        addSanitizedWalls(room.walls, to: rootNode)
+        addSanitizedOpenings(room.openings, to: rootNode)
+        addCameraAndLights(to: rootNode)
+
+        return scene
+    }
+
     @discardableResult
     static func overlayExternalUSDZ(
         on scene: SCNScene,
@@ -333,6 +346,136 @@ enum BarebonesRoomSceneBuilder {
             }
 
             rootNode.addChildNode(surfaceNode)
+        }
+    }
+
+    private static func addSanitizedWalls(_ walls: [SanitizedWall], to rootNode: SCNNode) {
+        for wall in walls {
+            addSanitizedPlane(
+                identifier: wall.id,
+                kind: .wall,
+                width: wall.width,
+                height: wall.height,
+                center: wall.center,
+                rotationRadians: wall.rotationRadians,
+                to: rootNode
+            )
+        }
+    }
+
+    private static func addSanitizedOpenings(_ openings: [SanitizedOpening], to rootNode: SCNNode) {
+        for opening in openings {
+            addSanitizedPlane(
+                identifier: opening.id,
+                kind: sanitizedSurfaceKind(for: opening.type),
+                width: opening.width,
+                height: opening.height,
+                center: opening.center,
+                rotationRadians: opening.rotationRadians,
+                to: rootNode
+            )
+        }
+    }
+
+    private static func addSanitizedFloor(from room: SanitizedRoom, to rootNode: SCNNode) {
+        let floorNode = SCNNode()
+        floorNode.name = "\(SurfaceKind.floor.nodeName)-\(room.id)"
+
+        if let geometry = makeSanitizedFloorGeometry(from: room) {
+            let geometryNode = SCNNode(geometry: geometry)
+            geometryNode.position.y += surfaceDepthOffset(for: .floor)
+            geometryNode.renderingOrder = renderingOrder(for: .floor)
+            floorNode.addChildNode(geometryNode)
+        }
+
+        if let outlineNode = makeSanitizedFloorOutlineNode(from: room) {
+            floorNode.addChildNode(outlineNode)
+        }
+
+        rootNode.addChildNode(floorNode)
+    }
+
+    private static func addSanitizedPlane(
+        identifier: String,
+        kind: SurfaceKind,
+        width: Double,
+        height: Double,
+        center: [Double],
+        rotationRadians: Double,
+        to rootNode: SCNNode
+    ) {
+        let surfaceNode = SCNNode()
+        surfaceNode.name = "\(kind.nodeName)-\(identifier)"
+        surfaceNode.position = SCNVector3(
+            center.count > 0 ? center[0] : 0,
+            center.count > 1 ? center[1] : 0,
+            center.count > 2 ? center[2] : 0
+        )
+        surfaceNode.eulerAngles.y = Float(rotationRadians)
+
+        let plane = SCNPlane(
+            width: CGFloat(max(width, 0.01)),
+            height: CGFloat(max(height, 0.01))
+        )
+        plane.materials = [kind.material]
+
+        let geometryNode = SCNNode(geometry: plane)
+        geometryNode.position.z += surfaceDepthOffset(for: kind)
+        geometryNode.renderingOrder = renderingOrder(for: kind)
+        surfaceNode.addChildNode(geometryNode)
+
+        let halfWidth = Float(max(width, 0.01) / 2)
+        let halfHeight = Float(max(height, 0.01) / 2)
+        let outlineVertices = [
+            SCNVector3(-halfWidth, -halfHeight, 0),
+            SCNVector3(halfWidth, -halfHeight, 0),
+            SCNVector3(halfWidth, halfHeight, 0),
+            SCNVector3(-halfWidth, halfHeight, 0)
+        ]
+        if let outlineNode = makeOutlineNode(from: outlineVertices, kind: kind) {
+            surfaceNode.addChildNode(outlineNode)
+        }
+
+        rootNode.addChildNode(surfaceNode)
+    }
+
+    private static func makeSanitizedFloorGeometry(from room: SanitizedRoom) -> SCNGeometry? {
+        let polygon = sanitizedFloorVertices(from: room)
+        guard polygon.count >= 3 else { return nil }
+        return polygonGeometry(from: polygon, kind: .floor)
+    }
+
+    private static func makeSanitizedFloorOutlineNode(from room: SanitizedRoom) -> SCNNode? {
+        let vertices = sanitizedFloorVertices(from: room).map { SCNVector3($0.x, $0.y, $0.z) }
+        return makeOutlineNode(from: vertices, kind: .floor)
+    }
+
+    private static func sanitizedFloorVertices(from room: SanitizedRoom) -> [simd_float3] {
+        if room.floorPolygon.count >= 3 {
+            return room.floorPolygon.compactMap { point in
+                guard point.count >= 2 else { return nil }
+                return simd_float3(Float(point[0]), 0, Float(point[1]))
+            }
+        }
+
+        let halfWidth = Float(max(room.boundingBox.width, 0.01) / 2)
+        let halfDepth = Float(max(room.boundingBox.depth, 0.01) / 2)
+        return [
+            simd_float3(-halfWidth, 0, -halfDepth),
+            simd_float3(halfWidth, 0, -halfDepth),
+            simd_float3(halfWidth, 0, halfDepth),
+            simd_float3(-halfWidth, 0, halfDepth)
+        ]
+    }
+
+    private static func sanitizedSurfaceKind(for type: String) -> SurfaceKind {
+        switch type.lowercased() {
+        case "door":
+            return .door
+        case "window":
+            return .window
+        default:
+            return .opening
         }
     }
 
@@ -706,6 +849,10 @@ enum BarebonesRoomImportLoader {
     static func loadScene(from data: Data) throws -> SCNScene {
         let decoder = JSONDecoder()
 
+        if let room = try? decoder.decode(SanitizedRoomPayload.self, from: data) {
+            return BarebonesRoomSceneBuilder.scene(for: room)
+        }
+
         if #available(iOS 17.0, *), let room = try? decoder.decode(BarebonesCapturedRoom.self, from: data) {
             return BarebonesRoomSceneBuilder.scene(for: room)
         }
@@ -719,6 +866,10 @@ enum BarebonesRoomImportLoader {
 
     static func loadPlacedObjects(from data: Data) throws -> [PlacedFurnitureObject] {
         let decoder = JSONDecoder()
+
+        if let room = try? decoder.decode(SanitizedRoomPayload.self, from: data) {
+            return room.objects
+        }
 
         if #available(iOS 17.0, *), let room = try? decoder.decode(BarebonesCapturedRoom.self, from: data) {
             return room.objects
@@ -786,6 +937,10 @@ enum BarebonesRoomJSONSanitizer {
     }
 
     static func normalizedRoomData(from data: Data) throws -> Data {
+        if let sanitizedRoom = try? JSONDecoder().decode(SanitizedRoomPayload.self, from: data) {
+            return try JSONEncoder.prettyPrintedSorted.encode(sanitizedRoom)
+        }
+
         let jsonObject = try JSONSerialization.jsonObject(with: data)
 
         guard var roomDictionary = jsonObject as? [String: Any] else {
@@ -818,6 +973,12 @@ enum BarebonesRoomJSONSanitizer {
     }
 
     static func roomData(byUpdatingObjects objects: [PlacedFurnitureObject], in data: Data) throws -> Data {
+        if let sanitizedRoom = try? JSONDecoder().decode(SanitizedRoomPayload.self, from: data) {
+            return try JSONEncoder.prettyPrintedSorted.encode(
+                sanitizedRoom.replacingObjects(with: objects)
+            )
+        }
+
         let normalizedData = try normalizedRoomData(from: data)
         let jsonObject = try JSONSerialization.jsonObject(with: normalizedData)
 
@@ -880,6 +1041,14 @@ enum BarebonesExportError: LocalizedError {
         case .usdzExportFailed:
             return "The app could not generate the shell-only USDZ file."
         }
+    }
+}
+
+private extension JSONEncoder {
+    static var prettyPrintedSorted: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
     }
 }
 

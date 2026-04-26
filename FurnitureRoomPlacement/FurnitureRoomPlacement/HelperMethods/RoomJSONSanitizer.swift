@@ -14,6 +14,10 @@ final class RoomJSONSanitizer {
 
     static func sanitizedRoom(from data: Data, objects: [PlacedFurnitureObject]) throws -> SanitizedRoomPayload {
         let decoder = JSONDecoder()
+        if let sanitizedRoom = try? decoder.decode(SanitizedRoomPayload.self, from: data) {
+            return sanitizedRoom.replacingObjects(with: objects)
+        }
+
         let room = try decoder.decode(RawCapturedRoom.self, from: data)
         return sanitizedRoom(from: room, objects: objects)
     }
@@ -426,6 +430,18 @@ struct SanitizedRoomPayload: Codable {
         openings = try container.decode([SanitizedOpening].self, forKey: .openings)
         objects = try container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects) ?? []
         metadata = try container.decode(SanitizedMetadata.self, forKey: .metadata)
+    }
+
+    func replacingObjects(with objects: [PlacedFurnitureObject]) -> SanitizedRoomPayload {
+        SanitizedRoomPayload(
+            schemaVersion: schemaVersion,
+            units: units,
+            room: room,
+            walls: walls,
+            openings: openings,
+            objects: objects,
+            metadata: metadata
+        )
     }
 }
 
