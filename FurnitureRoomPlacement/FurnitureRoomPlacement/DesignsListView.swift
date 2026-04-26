@@ -313,7 +313,7 @@ private struct DesignCard: View {
                     Text("Created \(design.createdAt, style: .relative) ago")
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
-
+                    Spacer()
                     Image(systemName: "pencil")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.primary)
