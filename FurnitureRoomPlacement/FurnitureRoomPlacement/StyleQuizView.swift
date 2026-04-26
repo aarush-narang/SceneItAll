@@ -17,25 +17,30 @@ struct StyleQuizView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                progressBar
+            ZStack {
+                Color(uiColor: UIColor(white: 0.08, alpha: 1.0))
+                    .ignoresSafeArea()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        switch viewModel.step {
-                        case 0: styleTagsStep
-                        case 1: colorStep
-                        case 2: materialStep
-                        case 3: densityStep
-                        case 4: philosophyStep
-                        default: EmptyView()
+                VStack(spacing: 0) {
+                    progressBar
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 24) {
+                            switch viewModel.step {
+                            case 0: styleTagsStep
+                            case 1: colorStep
+                            case 2: materialStep
+                            case 3: densityStep
+                            case 4: philosophyStep
+                            default: EmptyView()
+                            }
                         }
+                        .padding(24)
+                        .animation(.easeInOut(duration: 0.25), value: viewModel.step)
                     }
-                    .padding(24)
-                    .animation(.easeInOut(duration: 0.25), value: viewModel.step)
-                }
 
-                navigationButtons
+                    navigationButtons
+                }
             }
             .navigationTitle("Your Style")
             .navigationBarTitleDisplayMode(.inline)
@@ -187,14 +192,19 @@ struct StyleQuizView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Describe your dream room")
                 .font(.system(size: 22, weight: .bold))
-            Text("A sentence or two the AI will follow as a guiding principle.")
+            Text("A sentence or two the AI will follow as a guiding principle. Separate different principles with a comma.")
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
 
             TextEditor(text: $viewModel.philosophy)
                 .frame(minHeight: 120)
                 .padding(12)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+                .scrollContentBackground(.hidden)
+                .background(Color(.black).opacity(0.2), in: RoundedRectangle(cornerRadius: 14))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color(.separator).opacity(0.5), lineWidth: 1.5)
+                }
                 .overlay(alignment: .topLeading) {
                     if viewModel.philosophy.isEmpty {
                         Text("e.g. \"Cozy and warm, lots of natural wood, nothing too busy\"")
