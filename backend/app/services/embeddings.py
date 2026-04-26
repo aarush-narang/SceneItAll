@@ -29,43 +29,28 @@ def embed_text_gemini(text: str) -> list[float]:
     return result.embeddings[0].values
 
 
-_CAPTION_PROMPT_BASE = (
+_CAPTION_PROMPT = (
     "You are matching a piece of furniture in a room scan against an IKEA catalog. "
-    "Describe ONLY the foreground furniture item in 1-2 sentences. "
-    "Focus on primary material, color, leg style, back style, cushion presence, "
-    "and any distinctive shape or structural features. "
-    "Do not describe the background or surroundings. Output the description only."
-)
-
-_CAPTION_PROMPT_WITH_CATEGORY = (
-    "You are matching a piece of furniture in a room scan against an IKEA catalog. "
-    "RoomPlan has identified this object as a {category}. "
-    "Describe ONLY the foreground {category} in 1-2 sentences. "
-    "Focus on primary material, color, leg style, back style, cushion presence, "
-    "and any distinctive shape or structural features that distinguish this specific {category}. "
-    "Do not describe the background, surroundings, or other furniture nearby. "
+    "Identify and describe ONLY the primary foreground furniture item in 1-2 sentences. "
+    "State what type of furniture it is, then its primary material, color, leg style, "
+    "back style, cushion presence, and any distinctive shape or structural features. "
+    "Do not describe the background, room, or other furniture nearby. "
     "Output the description only."
 )
 
 
 def caption_image_gemini(
     image: Image.Image,
-    category: str | None = None,
     model: str = "gemini-2.0-flash",
 ) -> str:
-    """One-shot caption of a single image via Gemini Flash.
+    """One-shot caption of a single furniture crop via Gemini Flash.
 
-    Pass `category` (the RoomPlan object category, e.g. "chair") to anchor
-    the description to the correct furniture type — critical when the frame
-    contains multiple furniture types in close proximity.
+    Gemini freely identifies the furniture type from the image — RoomPlan's
+    category label is intentionally not passed here so the embedding reflects
+    what the camera actually saw, not what RoomPlan guessed.
     """
     import io
     from google.genai import types
-
-    if category:
-        prompt = _CAPTION_PROMPT_WITH_CATEGORY.format(category=category)
-    else:
-        prompt = _CAPTION_PROMPT_BASE
 
     client = _get_gemini()
     buf = io.BytesIO()
@@ -74,7 +59,7 @@ def caption_image_gemini(
 
     response = client.models.generate_content(
         model=model,
-        contents=[image_part, prompt],
+        contents=[image_part, _CAPTION_PROMPT],
     )
     return (response.text or "").strip()
 

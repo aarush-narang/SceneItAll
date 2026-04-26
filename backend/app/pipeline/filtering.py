@@ -1,20 +1,19 @@
-"""Build the hard-filter `$match` stage that prunes the catalog before vector search.
+"""Build the pre-filter `$match` stage that prunes the catalog before vector search.
 
-Demo mode: filter only on category (RoomPlan label → mapped catalog categories).
-The dimension envelope was too aggressive — `dimensions_bbox.volume_m3` doesn't
-exist in the live catalog, so the `$or` fallback no-op'd and per-axis ±25% was
-filtering out almost everything. Dimensions still influence the *ranking* via
-`matching.dim_fit_score`, so we'll still prefer correctly-sized matches without
-hard-rejecting the slightly-off ones.
+Category filtering is intentionally removed. RoomPlan's category label is used
+only for its 3D geometry (dimensions, transform, position). The actual furniture
+type is determined by the visual + text embeddings — CLIP shape features and
+Gemini's free-form identification are treated as ground truth for category.
 
-Set `STRICT_DIMENSION_FILTER = True` to re-enable the hard envelope (only do
-this once `dimensions_bbox.volume_m3` is added to the catalog).
+Searching across the full catalog lets a chair crop match a chair even when
+RoomPlan incorrectly labelled it as a sofa.
+
+STRICT_DIMENSION_FILTER can be re-enabled once `dimensions_bbox.volume_m3` is
+added to the catalog schema.
 """
 from __future__ import annotations
 
-from .category_map import catalog_categories_for
-
-AXIS_TOLERANCE = 0.5         # widened from 0.25; only used when STRICT_DIMENSION_FILTER
+AXIS_TOLERANCE = 0.5
 STRICT_DIMENSION_FILTER = False
 
 
@@ -26,17 +25,19 @@ def build_candidate_filter(
     roomplan_category: str,
     detected_dims: tuple[float, float, float],
 ) -> dict | None:
-    """Return a Mongo `$match`-style filter dict, or `None` when the RoomPlan
-    category has no plausible catalog match (caller should skip vector search
-    and white-box)."""
-    categories = catalog_categories_for(roomplan_category)
-    if not categories:
+    """Return a Mongo `$match`-style filter dict for the vector search pre-filter.
+
+    Returns an empty dict (search the full catalog) — category filtering is
+    disabled so the embedding determines furniture type, not RoomPlan's label.
+    Returns `None` only when the detected object is a structural element that
+    has no plausible catalog match at all (stairs, fireplace).
+    """
+    # Structural elements that are never purchaseable furniture.
+    if roomplan_category.lower() in {"fireplace", "stairs"}:
         return None
 
-    category_clause = {"taxonomy_inferred.category": {"$in": categories}}
-
     if not STRICT_DIMENSION_FILTER:
-        return category_clause
+        return {}  # no pre-filter; vector search ranges over the full catalog
 
     w_lo, w_hi = _axis_envelope(detected_dims[0])
     h_lo, h_hi = _axis_envelope(detected_dims[1])
@@ -44,7 +45,6 @@ def build_candidate_filter(
 
     return {
         "$and": [
-            category_clause,
             {"dimensions_bbox.width_m": {"$gte": w_lo, "$lte": w_hi}},
             {"dimensions_bbox.height_m": {"$gte": h_lo, "$lte": h_hi}},
             {"dimensions_bbox.depth_m": {"$gte": d_lo, "$lte": d_hi}},
