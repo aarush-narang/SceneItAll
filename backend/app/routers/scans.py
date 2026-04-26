@@ -32,7 +32,7 @@ from ..pipeline.matching import hybrid_search_and_rank
 from ..pipeline.placement import compute_transform
 from ..pipeline.projection import bbox_corners_world, project_to_pixels
 from ..pipeline.segmentation import segment_to_white_bg
-from ..services.embeddings import caption_image_gemini, embed_text_gemini
+from ..services.embeddings import caption_annotated_frame_gemini, embed_text_gemini
 
 router = APIRouter(prefix="/v1/scans", tags=["scans"])
 
@@ -210,28 +210,30 @@ def _build_room_passthrough(scan: ScanPayload) -> dict:
 
 # ---------- per-object pipeline ----------
 
-def _embed_object_sync(
-    crops: list[Image.Image],
-) -> tuple[np.ndarray | None, Image.Image | None]:
-    """Segment + visual-embed in a worker thread.
+def _embed_object_sync(crops: list[Image.Image]) -> np.ndarray | None:
+    """Segment crops + CLIP visual-embed in a worker thread.
 
-    Returns `(visual_query_vec, best_segmented_crop)`. The best crop (the first
-    one — `select_top_frames` returns frames already sorted by score) is
-    handed back so the orchestrator can run a Gemini caption on it for the
-    text side of the hybrid search."""
+    Segmented white-background crops are used for CLIP shape matching only.
+    Gemini captioning uses the annotated full frame (see _caption_and_embed_sync)
+    so this function no longer needs to return the best crop."""
     if not crops:
-        return None, None
+        return None
     segmented = [segment_to_white_bg(c) for c in crops]
-    visual = embed_crops_mean(segmented)
-    return visual, segmented[0]
+    return embed_crops_mean(segmented)
 
 
-def _caption_and_embed_sync(image: Image.Image) -> tuple[str, np.ndarray] | None:
-    """Run Gemini Flash caption + Gemini text embed on one image. Returns
-    `(caption, text_query_vec)` or None if either step fails. Network IO is
-    blocking, so this runs in a worker thread."""
+def _caption_and_embed_sync(
+    frame: Image.Image,
+    rect: tuple[float, float, float, float],
+) -> tuple[str, np.ndarray] | None:
+    """Caption the annotated full frame + Gemini text embed.
+
+    Sends a region of the original camera frame with the projected bounding box
+    drawn on it, so Gemini sees the object in its room context rather than a
+    de-backgrounded crop. Returns (caption, text_query_vec) or None on failure.
+    Network IO is blocking; run in a worker thread."""
     try:
-        caption = caption_image_gemini(image)
+        caption = caption_annotated_frame_gemini(frame, rect)
         if not caption:
             return None
         vec = np.asarray(embed_text_gemini(caption), dtype=np.float32)
@@ -306,12 +308,32 @@ async def _process_object_inner(
     query_vec: np.ndarray | None = None
     text_query_vec: np.ndarray | None = None
     caption: str | None = None
-    if crops:
-        query_vec, best_crop = await asyncio.to_thread(_embed_object_sync, crops)
-        if best_crop is not None:
-            caption_result = await asyncio.to_thread(_caption_and_embed_sync, best_crop)
-            if caption_result is not None:
-                caption, text_query_vec = caption_result
+
+    # Run CLIP segmentation+embedding and Gemini annotated-frame captioning
+    # concurrently — they're independent and both are blocking CPU/network ops.
+    best_frame = images.get(top[0].frame_id) if top else None
+    best_rect = top[0].projection.rect if top else None
+
+    clip_task = asyncio.to_thread(_embed_object_sync, crops) if crops else None
+    caption_task = (
+        asyncio.to_thread(_caption_and_embed_sync, best_frame, best_rect)
+        if best_frame is not None and best_rect is not None
+        else None
+    )
+
+    if clip_task and caption_task:
+        clip_result, caption_result = await asyncio.gather(clip_task, caption_task)
+        query_vec = clip_result
+    elif clip_task:
+        query_vec = await clip_task
+        caption_result = None
+    elif caption_task:
+        caption_result = await caption_task
+    else:
+        caption_result = None
+
+    if caption_result is not None:
+        caption, text_query_vec = caption_result
 
     candidates = []
     if query_vec is not None:
