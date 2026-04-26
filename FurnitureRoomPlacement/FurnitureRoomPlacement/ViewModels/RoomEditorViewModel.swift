@@ -329,18 +329,39 @@ final class RoomEditorViewModel: ObservableObject {
     }
 
     /// Apply a persisted placement (from MongoDB) to a freshly-loaded overlay
-    /// node. Agent-placed items are stored with BOTTOM-Y (`y = floor_y`);
-    /// user-placed items are stored with CENTER-Y. We always want CENTER-Y in
-    /// the scene because that matches our container pivot, so promote agent
-    /// placements by `halfHeight` here. iOS never writes corrected values back
-    /// to the backend (manual saves only run for user-added items via
-    /// `addObjectToDesign`), so the convention stays stable across reloads.
+    /// node. Three backend paths feed into this, and they each need different
+    /// handling because they don't agree on what `position.y` means:
+    ///
+    ///   - LLM agent (`place_item.py`): stores BOTTOM-Y (`position.y = floor_y`).
+    ///     Lift by `halfHeight` so the AABB center matches the container pivot.
+    ///   - LiDAR scanner (`pipeline/placement.py`): stores CENTER-Y derived
+    ///     from the *detected* bbox bottom, which can sit a few cm above the
+    ///     actual floor due to scan imprecision. Snap Y to `floor + halfHeight`
+    ///     so items rest on the ground rather than hovering.
+    ///   - User catalog (iOS `addObjectToDesign`): stores CENTER-Y read off
+    ///     the SCN node directly. Apply as-is.
+    ///
+    /// LiDAR and LLM-agent items both use `placedBy == "agent"` (the backend's
+    /// schema only allows "user" or "agent"), so we use the LiDAR-only
+    /// `rationale == "Matched from LiDAR scan"` marker to tell them apart.
     private func applyPersistedPlacement(of object: PlacedFurnitureObject, to node: SCNNode) {
+        let halfHeight = BarebonesRoomSceneBuilder.placementHalfHeight(of: node)
+
+        if object.rationale == "Matched from LiDAR scan",
+           let floor = BarebonesRoomSceneBuilder.floorY(in: scene.rootNode) {
+            var snapped = object.placement
+            while snapped.position.count < 3 {
+                snapped.position.append(0)
+            }
+            snapped.position[1] = floor + halfHeight
+            snapped.apply(to: node)
+            return
+        }
+
         guard object.placedBy == "agent" else {
             object.placement.apply(to: node)
             return
         }
-        let halfHeight = BarebonesRoomSceneBuilder.placementHalfHeight(of: node)
         liftedToCenterY(object.placement, halfHeight: halfHeight).apply(to: node)
     }
 

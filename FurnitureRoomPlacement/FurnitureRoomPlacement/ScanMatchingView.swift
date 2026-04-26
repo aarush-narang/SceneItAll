@@ -127,6 +127,11 @@ final class ScanMatchingViewModel: ObservableObject {
                 )
                 let furniture = Furniture(savedSnapshot: snapshot)
 
+                // The backend's Design schema only accepts `placed_by ∈ {"user",
+                // "agent"}`; sending anything else 422s. LiDAR items therefore
+                // share the "agent" tag with LLM-placed items, but we use the
+                // distinctive `rationale` string ("Matched from LiDAR scan") to
+                // tell the two paths apart in `applyPersistedPlacement`.
                 let placed = PlacedFurnitureObject(
                     id: obj.detectedId,
                     furniture: furniture,
@@ -210,7 +215,15 @@ final class ScanMatchingViewModel: ObservableObject {
     private func applyPlacement(_ placement: FurniturePlacement, toNodeNamed name: String, in scene: SCNScene) {
         guard let node = scene.rootNode.childNode(withName: name, recursively: true) else { return }
         if placement.position.count >= 3 {
-            node.position = SCNVector3(placement.position[0], placement.position[1], placement.position[2])
+            // `pipeline/placement.py` derives Y from the LiDAR-detected bbox's
+            // bottom, which can sit a few centimeters above the actual floor
+            // due to scan imprecision. Override to the scene's measured floor
+            // plus the model's half-height so the bottom of the AABB lands
+            // exactly on the ground (matching the user/agent flows).
+            let halfHeight = BarebonesRoomSceneBuilder.placementHalfHeight(of: node)
+            let snappedY = BarebonesRoomSceneBuilder.floorY(in: scene.rootNode).map { $0 + halfHeight }
+                ?? placement.position[1]
+            node.position = SCNVector3(placement.position[0], snappedY, placement.position[2])
         }
         if placement.eulerAngles.count >= 3 {
             node.eulerAngles = SCNVector3(placement.eulerAngles[0], placement.eulerAngles[1], placement.eulerAngles[2])
