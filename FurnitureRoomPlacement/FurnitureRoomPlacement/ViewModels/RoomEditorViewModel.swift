@@ -1,0 +1,326 @@
+import SwiftUI
+import SceneKit
+import Combine
+
+enum FurnitureInteractionMode {
+    case view
+    case move
+}
+
+@MainActor
+final class RoomEditorViewModel: ObservableObject {
+    let scene: SCNScene
+    let title: String
+    let baseRoomData: Data
+
+    @Published var placedObjects: [PlacedFurnitureObject]
+    @Published var hasOverlayedExternalUSDZ: Bool
+    @Published var areWallsDimmed = false
+    @Published var furnitureInteractionMode: FurnitureInteractionMode = .view
+    @Published var showFurnitureCatalog = false
+
+    @Published var exportDocument: JSONExportDocument?
+    @Published var isShowingSaveExporter = false
+    @Published var exportErrorMessage = ""
+    @Published var isShowingExportError = false
+
+    @Published var syncErrorMessage = ""
+    @Published var isShowingSyncError = false
+    @Published var isShowingOverlayError = false
+
+    @Published var isShowingAssistant = false
+    @Published var isAssistantLoading = false
+    @Published var isPlacementCleanupLoading = false
+    @Published var assistantDraft = ""
+    @Published var assistantMessages: [ImportedRoomAssistantMessage] = [
+        ImportedRoomAssistantMessage(
+            role: .assistant,
+            text: "Ask about the current room layout. Your message and the latest blueprint JSON will be sent to the agent."
+        )
+    ]
+    @Published var pendingPlacementPreview: [String: FurniturePlacement] = [:]
+
+    private var agentSessionID: String?
+    private var previewOriginalPlacements: [String: FurniturePlacement] = [:]
+    private let initialPlacedObjects: [PlacedFurnitureObject]
+    private var hasRestoredSavedFurniture = false
+
+    var hasPendingPlacementPreview: Bool { !pendingPlacementPreview.isEmpty }
+    var isBusy: Bool { isAssistantLoading || isPlacementCleanupLoading }
+
+    var resolvedTitle: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Imported Room" : trimmed
+    }
+
+    var defaultExportFileName: String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "BarebonesRoom" : "\(trimmed)_furnished"
+    }
+
+    nonisolated init(scene: SCNScene, title: String, baseRoomData: Data, initialPlacedObjects: [PlacedFurnitureObject]) {
+        self.scene = scene
+        self.title = title
+        self.baseRoomData = baseRoomData
+        self.initialPlacedObjects = initialPlacedObjects
+        self._placedObjects = Published(initialValue: initialPlacedObjects)
+        self._hasOverlayedExternalUSDZ = Published(initialValue: !initialPlacedObjects.isEmpty)
+    }
+
+    // MARK: - Wall Opacity
+
+    func toggleWallDimming() {
+        areWallsDimmed.toggle()
+        let opacity: CGFloat = areWallsDimmed ? 0.5 : 1.0
+        let writesToDepth = !areWallsDimmed
+        for wallNode in scene.rootNode.childNodes(passingTest: { n, _ in n.name?.hasPrefix("wall-") == true }) {
+            setOpacity(opacity, on: wallNode)
+        }
+        for shellNode in scene.rootNode.childNodes(passingTest: { n, _ in
+            guard let name = n.name else { return false }
+            return name.hasPrefix("wall-") || name.hasPrefix("door-") || name.hasPrefix("window-") || name.hasPrefix("opening-")
+        }) {
+            setDepthWrite(writesToDepth, on: shellNode)
+        }
+    }
+
+    private func setOpacity(_ opacity: CGFloat, on node: SCNNode) {
+        node.opacity = opacity
+        node.geometry?.materials.forEach { $0.transparency = opacity }
+        node.childNodes.forEach { setOpacity(opacity, on: $0) }
+    }
+
+    private func setDepthWrite(_ writes: Bool, on node: SCNNode) {
+        node.geometry?.materials.forEach { $0.writesToDepthBuffer = writes }
+        node.childNodes.forEach { setDepthWrite(writes, on: $0) }
+    }
+
+    // MARK: - Interaction Mode
+
+    func toggleMoveMode() {
+        furnitureInteractionMode = furnitureInteractionMode == .move ? .view : .move
+    }
+
+    // MARK: - Export
+
+    func saveRoomJSON() {
+        do {
+            let updatedObjects = placedObjects.map { currentPlacement(for: $0) }
+            let updatedData = try RoomJSONSanitizer.sanitizedJSONData(from: baseRoomData, appending: updatedObjects)
+            exportDocument = JSONExportDocument(data: updatedData)
+            isShowingSaveExporter = true
+        } catch {
+            exportErrorMessage = error.localizedDescription
+            isShowingExportError = true
+        }
+    }
+
+    // MARK: - Furniture Management
+
+    func handleFurnitureAdded(_ placedObject: PlacedFurnitureObject) {
+        placedObjects.append(placedObject)
+        Task { await syncAddedFurnitureObject(placedObject) }
+    }
+
+    private func syncAddedFurnitureObject(_ object: PlacedFurnitureObject) async {
+        do {
+            try await FurnitureAPIClient.shared.addObjectToDesign(
+                currentPlacement(for: object),
+                designName: resolvedTitle
+            )
+        } catch {
+            syncErrorMessage = error.localizedDescription
+            isShowingSyncError = true
+        }
+    }
+
+    // MARK: - Assistant
+
+    func handleAssistantSend() {
+        let trimmedPrompt = assistantDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty, !isBusy else { return }
+        assistantMessages.append(ImportedRoomAssistantMessage(role: .user, text: trimmedPrompt))
+        assistantDraft = ""
+        Task { await sendAssistantMessage(prompt: trimmedPrompt) }
+    }
+
+    func handlePlacementCleanup() {
+        guard !placedObjects.isEmpty, !isBusy, pendingPlacementPreview.isEmpty else { return }
+        Task { await requestPlacementCleanupSuggestions() }
+    }
+
+    func acceptPlacementCleanupPreview() {
+        guard !pendingPlacementPreview.isEmpty else { return }
+        let updatedObjects = placedObjects
+        pendingPlacementPreview = [:]
+        previewOriginalPlacements = [:]
+        Task { await persistPlacementUpdates(updatedObjects) }
+    }
+
+    func declinePlacementCleanupPreview() {
+        guard !previewOriginalPlacements.isEmpty else { return }
+        applyPlacementsToScene(previewOriginalPlacements)
+        placedObjects = applyingPlacements(previewOriginalPlacements, to: placedObjects)
+        pendingPlacementPreview = [:]
+        previewOriginalPlacements = [:]
+    }
+
+    // MARK: - Assistant Internals
+
+    private func makeAssistantRequest(prompt: String) throws -> ImportedRoomAssistantRequest {
+        let updatedObjects = placedObjects.map { currentPlacement(for: $0) }
+        let sanitizedData = try RoomJSONSanitizer.sanitizedJSONData(from: baseRoomData, appending: updatedObjects)
+        return ImportedRoomAssistantRequest(
+            prompt: prompt,
+            sanitizedJSONString: String(decoding: sanitizedData, as: UTF8.self)
+        )
+    }
+
+    private func sendAssistantMessage(prompt: String) async {
+        isAssistantLoading = true
+        defer { isAssistantLoading = false }
+        do {
+            let request = try makeAssistantRequest(prompt: prompt)
+            let response = try await FurnitureAPIClient.shared.agentChat(
+                message: """
+                User message:
+                \(request.prompt)
+
+                Current blueprint JSON:
+                \(request.sanitizedJSONString)
+                """,
+                sessionID: agentSessionID
+            )
+            agentSessionID = response.sessionID
+            if response.placements.isEmpty {
+                appendMessage(response.assistantText)
+            } else {
+                applyPlacementResponse(response, fallbackMessage: "Updated the room layout using the returned placement suggestions.")
+            }
+        } catch {
+            assistantMessages.append(ImportedRoomAssistantMessage(role: .assistant, text: "I couldn't reach the room assistant: \(error.localizedDescription)"))
+        }
+    }
+
+    private func requestPlacementCleanupSuggestions() async {
+        isPlacementCleanupLoading = true
+        defer { isPlacementCleanupLoading = false }
+        do {
+            let cleanupPrompt = """
+            Suggest improved placements for the furniture already in this room.
+            Focus on fixing hovering objects, objects intersecting other geometry, and objects that should sit against a wall but are floating away from it.
+            Return the revised placements in the structured `placements` field using the existing object ids and placement arrays, and summarize the reasoning briefly in `assistant_text`.
+            """
+            let request = try makeAssistantRequest(prompt: cleanupPrompt)
+            let response = try await FurnitureAPIClient.shared.agentChat(
+                message: """
+                Placement cleanup task:
+                \(request.prompt)
+
+                Use the current object ids exactly as they appear in the JSON.
+                Only suggest updates for objects that need repositioning or reorientation.
+                Do not add or delete furniture.
+                Put only the human-readable summary in `assistant_text`.
+                Put all coordinate changes only in `placements`.
+
+                Current blueprint JSON:
+                \(request.sanitizedJSONString)
+                """,
+                sessionID: agentSessionID
+            )
+            agentSessionID = response.sessionID
+            applyPlacementResponse(response, fallbackMessage: "Previewing updated furniture placements. Use Accept or Decline to confirm.")
+        } catch {
+            assistantMessages.append(ImportedRoomAssistantMessage(role: .assistant, text: "I couldn't generate cleanup suggestions: \(error.localizedDescription)"))
+        }
+    }
+
+    private func applyPlacementResponse(_ response: AgentChatResponse, fallbackMessage: String) {
+        let suggested = response.placements.reduce(into: [String: FurniturePlacement]()) { $0[$1.objectID] = $1.placement }
+        guard !suggested.isEmpty else {
+            appendMessage(response.assistantText)
+            return
+        }
+        let current = placedObjects.map { currentPlacement(for: $0) }
+        previewOriginalPlacements = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0.placement) })
+        pendingPlacementPreview = suggested
+        placedObjects = applyingPlacements(suggested, to: current)
+        applyPlacementsToScene(suggested)
+        appendMessage(cleanSummary(from: response.assistantText) ?? fallbackMessage)
+    }
+
+    private func appendMessage(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        assistantMessages.append(ImportedRoomAssistantMessage(role: .assistant, text: trimmed))
+    }
+
+    private func cleanSummary(from text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let blocked = ["\"placements\"", "\"assistant_text\"", "\"tool_calls\"", "```json", "```"]
+        guard !blocked.contains(where: trimmed.localizedCaseInsensitiveContains) else { return nil }
+        return trimmed
+    }
+
+    func currentPlacement(for object: PlacedFurnitureObject) -> PlacedFurnitureObject {
+        let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: object.id)
+        guard let node = scene.rootNode.childNode(withName: nodeName, recursively: true) else { return object }
+        var updated = object
+        updated.placement = FurniturePlacement(from: node)
+        return updated
+    }
+
+    private func applyingPlacements(_ placements: [String: FurniturePlacement], to objects: [PlacedFurnitureObject]) -> [PlacedFurnitureObject] {
+        objects.map { obj in
+            guard let p = placements[obj.id] else { return obj }
+            var updated = obj
+            updated.placement = p
+            return updated
+        }
+    }
+
+    private func applyPlacementsToScene(_ placements: [String: FurniturePlacement]) {
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = 0.25
+        for (objectID, placement) in placements {
+            let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: objectID)
+            guard let node = scene.rootNode.childNode(withName: nodeName, recursively: true) else { continue }
+            placement.apply(to: node)
+        }
+        SCNTransaction.commit()
+    }
+
+    private func persistPlacementUpdates(_ objects: [PlacedFurnitureObject]) async {
+        do {
+            try await FurnitureAPIClient.shared.updateObjectsInDesign(objects, designName: resolvedTitle)
+        } catch {
+            syncErrorMessage = error.localizedDescription
+            isShowingSyncError = true
+        }
+    }
+
+    // MARK: - Restoration
+
+    func restoreSavedFurnitureIfNeeded() async {
+        guard !hasRestoredSavedFurniture else { return }
+        hasRestoredSavedFurniture = true
+
+        for object in initialPlacedObjects {
+            let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: object.id)
+            if scene.rootNode.childNode(withName: nodeName, recursively: true) != nil { continue }
+            do {
+                guard let remoteURL = object.furniture.remoteUSDZURL else { continue }
+                let localURL = try await RemoteUSDZCache.shared.localFileURL(for: remoteURL)
+                let didAdd = BarebonesRoomSceneBuilder.overlayExternalUSDZ(on: scene, fileURL: localURL, overlayIdentifier: object.id)
+                guard didAdd else { continue }
+                if let restoredNode = scene.rootNode.childNode(withName: nodeName, recursively: true) {
+                    object.placement.apply(to: restoredNode)
+                }
+                hasOverlayedExternalUSDZ = true
+            } catch {
+                isShowingOverlayError = true
+            }
+        }
+    }
+}

@@ -1,17 +1,10 @@
-/*
-See the LICENSE.txt file for this sample’s licensing information.
-
-Abstract:
-SwiftUI onboarding and unsupported-device screens.
-*/
-
 import SwiftUI
-import RoomPlan
 import SceneKit
 import UniformTypeIdentifiers
-import UIKit
 
-private struct JSONExportDocument: FileDocument {
+// MARK: - File Document for JSON Export
+
+struct JSONExportDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.json] }
 
     let data: Data
@@ -24,7 +17,6 @@ private struct JSONExportDocument: FileDocument {
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)
         }
-
         self.data = data
     }
 
@@ -33,169 +25,7 @@ private struct JSONExportDocument: FileDocument {
     }
 }
 
-private enum FurnitureInteractionMode {
-    case view
-    case move
-}
-
-struct OnboardingView: View {
-    private enum ImportMode {
-        case barebones
-        case stripFurniture
-    }
-
-    @State private var isShowingCaptureView = false
-    @State private var isShowingUnsupportedDeviceSheet = false
-    @State private var isShowingImporter = false
-    @State private var importMode: ImportMode = .barebones
-    @State private var importedScene: SCNScene?
-    @State private var importedRoomData: Data?
-    @State private var importedPlacedObjects: [PlacedFurnitureObject] = []
-    @State private var importedFileName = ""
-    @State private var importErrorMessage = ""
-    @State private var isShowingImportError = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Spacer()
-
-            Text("Create a 3D model of a room")
-                .font(.largeTitle.weight(.bold))
-
-            VStack(alignment: .leading, spacing: 12) {
-                Label("Move slowly and keep walls, windows, and doors in view.", systemImage: "camera.viewfinder")
-                Label("Walk the perimeter of the room before capturing details.", systemImage: "square.dashed")
-                Label("Finish scanning when the room outline looks complete.", systemImage: "checkmark.circle")
-            }
-            .font(.headline)
-            .foregroundStyle(.secondary)
-
-            Spacer()
-
-            VStack(spacing: 12) {
-                Button("Start Scan") {
-                    if RoomCaptureSession.isSupported {
-                        isShowingCaptureView = true
-                    } else {
-                        isShowingUnsupportedDeviceSheet = true
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-                Button("Import Barebones JSON") {
-                    importMode = .barebones
-                    isShowingImporter = true
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-                Button("Import JSON & Strip Furnitures") {
-                    importMode = .stripFurniture
-                    isShowingImporter = true
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
-        }
-        .padding(24)
-        .background(
-            LinearGradient(
-                colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .fullScreenCover(isPresented: $isShowingCaptureView) {
-            RoomCaptureContainerView()
-        }
-        .sheet(isPresented: $isShowingUnsupportedDeviceSheet) {
-            NavigationStack {
-                UnsupportedDeviceView()
-                    .navigationTitle("Unavailable")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Close") {
-                                isShowingUnsupportedDeviceSheet = false
-                            }
-                        }
-                    }
-            }
-            .presentationDetents([.medium])
-        }
-        .fullScreenCover(item: $importedScene) { scene in
-            ImportedRoomShellView(
-                scene: scene,
-                title: importedFileName,
-                baseRoomData: importedRoomData ?? Data(),
-                initialPlacedObjects: importedPlacedObjects
-            )
-        }
-        .fileImporter(
-            isPresented: $isShowingImporter,
-            allowedContentTypes: [.json],
-            allowsMultipleSelection: false
-        ) { result in
-            Task {
-                await handleImport(result)
-            }
-        }
-        .alert("Import Failed", isPresented: $isShowingImportError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(importErrorMessage)
-        }
-    }
-
-    @MainActor
-    private func handleImport(_ result: Result<[URL], Error>) async {
-        do {
-            guard let fileURL = try result.get().first else { return }
-            let didAccess = fileURL.startAccessingSecurityScopedResource()
-            defer {
-                if didAccess {
-                    fileURL.stopAccessingSecurityScopedResource()
-                }
-            }
-
-            let data = try Data(contentsOf: fileURL)
-            let scene: SCNScene
-
-            switch importMode {
-            case .barebones:
-                let fetchedObjects = try await fetchDesignObjects()
-                let fetchedObjectsData = try JSONEncoder().encode(fetchedObjects)
-                let mergedRoom = try BarebonesRoomJSONSanitizer.roomData(
-                    byMergingObjectsFromDesignObjectsData: fetchedObjectsData,
-                    intoRoomData: data
-                )
-
-                scene = try BarebonesRoomImportLoader.loadScene(from: mergedRoom.roomData)
-                importedRoomData = mergedRoom.roomData
-                importedPlacedObjects = mergedRoom.objects
-            case .stripFurniture:
-                let strippedData = try BarebonesRoomJSONSanitizer.stripToEssentialSurfaces(from: data)
-                scene = try BarebonesRoomImportLoader.loadScene(from: strippedData)
-                importedRoomData = strippedData
-                importedPlacedObjects = []
-            }
-
-            importedFileName = fileURL.deletingPathExtension().lastPathComponent
-            importedScene = scene
-        } catch {
-            importErrorMessage = error.localizedDescription
-            isShowingImportError = true
-        }
-    }
-
-    private func fetchDesignObjects() async throws -> [PlacedFurnitureObject] {
-        try await FurnitureAPIClient.shared.fetchDesignObjects()
-    }
-}
+// MARK: - Unsupported Device View
 
 struct UnsupportedDeviceView: View {
     var body: some View {
@@ -215,591 +45,9 @@ struct UnsupportedDeviceView: View {
     }
 }
 
-private struct ImportedRoomShellView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var isShowingOverlayError = false
-    @State private var hasOverlayedExternalUSDZ = false
-    @State private var areWallsDimmed = false
-    @State private var showFurnitureCatalog: Bool = false
-    @State private var furnitureInteractionMode: FurnitureInteractionMode = .view
-    @State private var placedObjects: [PlacedFurnitureObject] = []
-    @State private var exportDocument: JSONExportDocument?
-    @State private var isShowingSaveExporter = false
-    @State private var exportErrorMessage = ""
-    @State private var isShowingExportError = false
-    @State private var syncErrorMessage = ""
-    @State private var isShowingSyncError = false
-    @State private var hasRestoredSavedFurniture = false
-    @State private var isShowingAssistant = false
-    @State private var isAssistantLoading = false
-    @State private var isPlacementCleanupLoading = false
-    @State private var agentSessionID: String?
-    @State private var assistantDraft = ""
-    @State private var pendingPlacementPreview: [String: FurniturePlacement] = [:]
-    @State private var previewOriginalPlacements: [String: FurniturePlacement] = [:]
-    @State private var assistantMessages: [ImportedRoomAssistantMessage] = [
-        ImportedRoomAssistantMessage(
-            role: .assistant,
-            text: "Ask about the current room layout. Your message and the latest blueprint JSON will be sent to the agent."
-        )
-    ]
+// MARK: - Imported Room Scene View (UIViewRepresentable)
 
-    let scene: SCNScene
-    let title: String
-    let baseRoomData: Data
-    let initialPlacedObjects: [PlacedFurnitureObject]
-
-    init(
-        scene: SCNScene,
-        title: String,
-        baseRoomData: Data,
-        initialPlacedObjects: [PlacedFurnitureObject]
-    ) {
-        self.scene = scene
-        self.title = title
-        self.baseRoomData = baseRoomData
-        self.initialPlacedObjects = initialPlacedObjects
-        _placedObjects = State(initialValue: initialPlacedObjects)
-        _hasOverlayedExternalUSDZ = State(initialValue: !initialPlacedObjects.isEmpty)
-    }
-
-    var body: some View {
-        NavigationStack {
-            ZStack(alignment: .bottomLeading) {
-                ImportedRoomSceneView(
-                    scene: scene,
-                    interactionMode: furnitureInteractionMode
-                )
-                .background(Color(white: 0.72))
-                .ignoresSafeArea()
-
-                ImportedRoomAssistantOverlay(
-                    isPresented: $isShowingAssistant,
-                    draft: $assistantDraft,
-                    messages: assistantMessages,
-                    isChatLoading: isAssistantLoading,
-                    isCleanupLoading: isPlacementCleanupLoading,
-                    hasPendingPlacementPreview: !pendingPlacementPreview.isEmpty,
-                    onSend: handleAssistantSend,
-                    onPlacementCleanup: handlePlacementCleanup,
-                    onAcceptPlacementChanges: acceptPlacementCleanupPreview,
-                    onDeclinePlacementChanges: declinePlacementCleanupPreview
-                )
-            }
-            .navigationTitle(title.isEmpty ? "Imported Room" : title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarLeading) {
-//                    Button(hasOverlayedExternalUSDZ ? "USDZ Added" : "Overlay USDZ") {
-//                        let didAddOverlay = BarebonesRoomSceneBuilder.overlayExternalUSDZ(on: scene)
-//                        hasOverlayedExternalUSDZ = didAddOverlay || hasOverlayedExternalUSDZ
-//                        isShowingOverlayError = !didAddOverlay
-//                    }
-//                    .disabled(hasOverlayedExternalUSDZ)
-                    Button("Add Furniture") {
-                        showFurnitureCatalog.toggle()
-                    }
-
-                    Button(
-                        furnitureInteractionMode == .move ? "Done Moving" : "Move Furniture"
-                    ) {
-                        furnitureInteractionMode = furnitureInteractionMode == .move ? .view : .move
-                    }
-                    .disabled(!hasOverlayedExternalUSDZ)
-
-                    Button(areWallsDimmed ? "Walls 100%" : "Walls 50%") {
-                        areWallsDimmed.toggle()
-                        updateWallOpacity(in: scene, opacity: areWallsDimmed ? 0.5 : 1.0)
-                        updateShellDepth(in: scene, writesToDepthBuffer: !areWallsDimmed)
-                    }
-                }
-
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if !placedObjects.isEmpty {
-                        Button("Export") {
-                            saveRoomJSON()
-                        }
-                    }
-
-                    Button("Close") {
-                        dismiss()
-                    }
-                }
-            }
-            .alert("Unable to Overlay USDZ", isPresented: $isShowingOverlayError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text("The app could not load the external USDZ asset.")
-            }
-            .alert("Save Failed", isPresented: $isShowingExportError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(exportErrorMessage)
-            }
-            .alert("Sync Failed", isPresented: $isShowingSyncError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(syncErrorMessage)
-            }
-            .onChange(of: hasOverlayedExternalUSDZ) { _, hasOverlay in
-                if !hasOverlay {
-                    furnitureInteractionMode = .view
-                }
-            }
-            .task {
-                await restoreSavedFurnitureIfNeeded()
-            }
-            .fileExporter(
-                isPresented: $isShowingSaveExporter,
-                document: exportDocument,
-                contentType: .json,
-                defaultFilename: defaultExportFileName
-            ) { result in
-                if case .failure(let error) = result {
-                    exportErrorMessage = error.localizedDescription
-                    isShowingExportError = true
-                }
-            }
-            .sheet(isPresented: $showFurnitureCatalog) {
-                NavigationStack {
-                    FurnitureCatalogListView(
-                        showFurnitureCatalog: $showFurnitureCatalog,
-                        hasOverlayedExternalUSDZ: $hasOverlayedExternalUSDZ,
-                        scene: scene,
-                        onFurnitureAdded: { placedObject in
-                            placedObjects.append(placedObject)
-                            Task {
-                                await syncAddedFurnitureObject(placedObject)
-                            }
-                        }
-                    )
-                }
-                .presentationDetents([.fraction(0.92), .large])
-                .presentationDragIndicator(.visible)
-            }
-        }
-    }
-
-    private func updateWallOpacity(in scene: SCNScene, opacity: CGFloat) {
-        let wallNodes = scene.rootNode.childNodes(passingTest: { node, _ in
-            node.name?.hasPrefix("wall-") == true
-        })
-
-        for wallNode in wallNodes {
-            updateOpacityRecursively(for: wallNode, opacity: opacity)
-        }
-    }
-
-    private func updateShellDepth(in scene: SCNScene, writesToDepthBuffer: Bool) {
-        let shellNodes = scene.rootNode.childNodes(passingTest: { node, _ in
-            guard let name = node.name else {
-                return false
-            }
-
-            return name.hasPrefix("wall-")
-                || name.hasPrefix("door-")
-                || name.hasPrefix("window-")
-                || name.hasPrefix("opening-")
-        })
-
-        for shellNode in shellNodes {
-            updateDepthRecursively(for: shellNode, writesToDepthBuffer: writesToDepthBuffer)
-        }
-    }
-
-    private func updateOpacityRecursively(for node: SCNNode, opacity: CGFloat) {
-        node.opacity = opacity
-
-        if let geometry = node.geometry {
-            for material in geometry.materials {
-                material.transparency = opacity
-            }
-        }
-
-        for childNode in node.childNodes {
-            updateOpacityRecursively(for: childNode, opacity: opacity)
-        }
-    }
-
-    private func updateDepthRecursively(for node: SCNNode, writesToDepthBuffer: Bool) {
-        if let geometry = node.geometry {
-            for material in geometry.materials {
-                material.writesToDepthBuffer = writesToDepthBuffer
-            }
-        }
-
-        for childNode in node.childNodes {
-            updateDepthRecursively(for: childNode, writesToDepthBuffer: writesToDepthBuffer)
-        }
-    }
-
-    private var defaultExportFileName: String {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedTitle.isEmpty ? "BarebonesRoom" : "\(trimmedTitle)_furnished"
-    }
-
-    private func saveRoomJSON() {
-        do {
-            let updatedObjects = placedObjects.map(currentPlacement(for:))
-            let updatedData = try RoomJSONSanitizer.sanitizedJSONData(
-                from: baseRoomData,
-                appending: updatedObjects
-            )
-            exportDocument = JSONExportDocument(data: updatedData)
-            isShowingSaveExporter = true
-        } catch {
-            exportErrorMessage = error.localizedDescription
-            isShowingExportError = true
-        }
-    }
-
-    private func handleAssistantSend() {
-        let trimmedPrompt = assistantDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPrompt.isEmpty, !isAssistantLoading, !isPlacementCleanupLoading else {
-            return
-        }
-
-        assistantMessages.append(
-            ImportedRoomAssistantMessage(role: .user, text: trimmedPrompt)
-        )
-        assistantDraft = ""
-
-        Task {
-            await sendAssistantMessage(prompt: trimmedPrompt)
-        }
-    }
-
-    private func handlePlacementCleanup() {
-        guard !placedObjects.isEmpty, !isAssistantLoading, !isPlacementCleanupLoading, pendingPlacementPreview.isEmpty else {
-            return
-        }
-
-        Task {
-            await requestPlacementCleanupSuggestions()
-        }
-    }
-
-    private func makeAssistantRequest(prompt: String) throws -> ImportedRoomAssistantRequest {
-        let updatedObjects = placedObjects.map(currentPlacement(for:))
-        let sanitizedData = try RoomJSONSanitizer.sanitizedJSONData(
-            from: baseRoomData,
-            appending: updatedObjects
-        )
-        let sanitizedJSONString = String(decoding: sanitizedData, as: UTF8.self)
-
-        return ImportedRoomAssistantRequest(
-            prompt: prompt,
-            sanitizedJSONString: sanitizedJSONString
-        )
-    }
-
-    @MainActor
-    private func sendAssistantMessage(prompt: String) async {
-        isAssistantLoading = true
-        defer {
-            isAssistantLoading = false
-        }
-
-        do {
-            let request = try makeAssistantRequest(prompt: prompt)
-            let response = try await FurnitureAPIClient.shared.agentChat(
-                message: formattedAgentMessage(from: request),
-                sessionID: agentSessionID
-            )
-            agentSessionID = response.sessionID
-
-            if response.placements.isEmpty {
-                appendAssistantMessageIfNeeded(response.assistantText)
-            } else {
-                applyPlacementResponse(
-                    response,
-                    fallbackMessage: "Updated the room layout using the returned placement suggestions."
-                )
-            }
-        } catch {
-            assistantMessages.append(
-                ImportedRoomAssistantMessage(
-                    role: .assistant,
-                    text: "I couldn't reach the room assistant: \(error.localizedDescription)"
-                )
-            )
-        }
-    }
-
-    @MainActor
-    private func requestPlacementCleanupSuggestions() async {
-        isPlacementCleanupLoading = true
-        defer {
-            isPlacementCleanupLoading = false
-        }
-
-        do {
-            let request = try makeAssistantRequest(
-                prompt: """
-                Suggest improved placements for the furniture already in this room.
-                Focus on fixing hovering objects, objects intersecting other geometry, and objects that should sit against a wall but are floating away from it.
-                Return the revised placements in the structured `placements` field using the existing object ids and placement arrays, and summarize the reasoning briefly in `assistant_text`.
-                """
-            )
-            let response = try await FurnitureAPIClient.shared.agentChat(
-                message: formattedPlacementCleanupMessage(from: request),
-                sessionID: agentSessionID
-            )
-            agentSessionID = response.sessionID
-            applyPlacementResponse(
-                response,
-                fallbackMessage: "Previewing updated furniture placements. Use Accept or Decline to confirm."
-            )
-        } catch {
-            assistantMessages.append(
-                ImportedRoomAssistantMessage(
-                    role: .assistant,
-                    text: "I couldn't generate cleanup suggestions: \(error.localizedDescription)"
-                )
-            )
-        }
-    }
-
-    private func formattedAgentMessage(from request: ImportedRoomAssistantRequest) -> String {
-        """
-        User message:
-        \(request.prompt)
-
-        Current blueprint JSON:
-        \(request.sanitizedJSONString)
-        """
-    }
-
-    private func formattedPlacementCleanupMessage(from request: ImportedRoomAssistantRequest) -> String {
-        """
-        Placement cleanup task:
-        \(request.prompt)
-
-        Use the current object ids exactly as they appear in the JSON.
-        Only suggest updates for objects that need repositioning or reorientation.
-        Do not add or delete furniture.
-        Put only the human-readable summary in `assistant_text`.
-        Put all coordinate changes only in `placements`.
-
-        Current blueprint JSON:
-        \(request.sanitizedJSONString)
-        """
-    }
-
-    private func currentPlacedObjects() -> [PlacedFurnitureObject] {
-        placedObjects.map(currentPlacement(for:))
-    }
-
-    @MainActor
-    private func applyPlacementResponse(
-        _ response: AgentChatResponse,
-        fallbackMessage: String
-    ) {
-        let suggestedPlacements = response.placements.reduce(into: [String: FurniturePlacement]()) { partialResult, placement in
-            partialResult[placement.objectID] = placement.placement
-        }
-
-        guard !suggestedPlacements.isEmpty else {
-            appendAssistantMessageIfNeeded(response.assistantText)
-            return
-        }
-
-        let currentObjects = currentPlacedObjects()
-        previewOriginalPlacements = Dictionary(
-            uniqueKeysWithValues: currentObjects.map { ($0.id, $0.placement) }
-        )
-        pendingPlacementPreview = suggestedPlacements
-        placedObjects = applyingPlacements(suggestedPlacements, to: currentObjects)
-        applyPlacementsToScene(suggestedPlacements)
-        appendAssistantMessageIfNeeded(cleanAssistantSummary(from: response.assistantText) ?? fallbackMessage)
-    }
-
-    private func appendAssistantMessageIfNeeded(_ text: String) {
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty else {
-            return
-        }
-
-        assistantMessages.append(
-            ImportedRoomAssistantMessage(
-                role: .assistant,
-                text: trimmedText
-            )
-        )
-    }
-
-    private func cleanAssistantSummary(from text: String) -> String? {
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty else {
-            return nil
-        }
-
-        let blockedMarkers = [
-            "\"placements\"",
-            "\"assistant_text\"",
-            "\"tool_calls\"",
-            "```json",
-            "```"
-        ]
-
-        guard !blockedMarkers.contains(where: trimmedText.localizedCaseInsensitiveContains) else {
-            return nil
-        }
-
-        return trimmedText
-    }
-
-    private func currentPlacement(for object: PlacedFurnitureObject) -> PlacedFurnitureObject {
-        let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: object.id)
-        guard let placedNode = scene.rootNode.childNode(withName: nodeName, recursively: true) else {
-            return object
-        }
-
-        var updatedObject = object
-        updatedObject.placement = FurniturePlacement(from: placedNode)
-        return updatedObject
-    }
-
-    private func applyingPlacements(
-        _ placementsByObjectID: [String: FurniturePlacement],
-        to objects: [PlacedFurnitureObject]
-    ) -> [PlacedFurnitureObject] {
-        objects.map { object in
-            guard let updatedPlacement = placementsByObjectID[object.id] else {
-                return object
-            }
-
-            var updatedObject = object
-            updatedObject.placement = updatedPlacement
-            return updatedObject
-        }
-    }
-
-    @MainActor
-    private func applyPlacementsToScene(_ placementsByObjectID: [String: FurniturePlacement]) {
-        SCNTransaction.begin()
-        SCNTransaction.animationDuration = 0.25
-
-        for (objectID, placement) in placementsByObjectID {
-            let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: objectID)
-            guard let placedNode = scene.rootNode.childNode(withName: nodeName, recursively: true) else {
-                continue
-            }
-            placement.apply(to: placedNode)
-        }
-
-        SCNTransaction.commit()
-    }
-
-    @MainActor
-    private func acceptPlacementCleanupPreview() {
-        guard !pendingPlacementPreview.isEmpty else {
-            return
-        }
-
-        let updatedObjects = placedObjects
-        pendingPlacementPreview = [:]
-        previewOriginalPlacements = [:]
-
-        Task {
-            await persistPlacementUpdates(updatedObjects)
-        }
-    }
-
-    @MainActor
-    private func declinePlacementCleanupPreview() {
-        guard !previewOriginalPlacements.isEmpty else {
-            return
-        }
-
-        applyPlacementsToScene(previewOriginalPlacements)
-        placedObjects = applyingPlacements(previewOriginalPlacements, to: placedObjects)
-        pendingPlacementPreview = [:]
-        previewOriginalPlacements = [:]
-    }
-
-    @MainActor
-    private func syncAddedFurnitureObject(_ object: PlacedFurnitureObject) async {
-        do {
-            try await FurnitureAPIClient.shared.addObjectToDesign(
-                currentPlacement(for: object),
-                designName: resolvedDesignName
-            )
-        } catch {
-            syncErrorMessage = error.localizedDescription
-            isShowingSyncError = true
-        }
-    }
-
-    @MainActor
-    private func persistPlacementUpdates(_ objects: [PlacedFurnitureObject]) async {
-        do {
-            try await FurnitureAPIClient.shared.updateObjectsInDesign(
-                objects,
-                designName: resolvedDesignName
-            )
-        } catch {
-            syncErrorMessage = error.localizedDescription
-            isShowingSyncError = true
-        }
-    }
-
-    private var resolvedDesignName: String {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedTitle.isEmpty ? "Imported Room" : trimmedTitle
-    }
-
-    private func restoreSavedFurnitureIfNeeded() async {
-        guard !hasRestoredSavedFurniture else {
-            return
-        }
-
-        hasRestoredSavedFurniture = true
-
-        for object in initialPlacedObjects {
-            let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: object.id)
-            let alreadyLoaded = await MainActor.run {
-                scene.rootNode.childNode(withName: nodeName, recursively: true) != nil
-            }
-
-            if alreadyLoaded {
-                continue
-            }
-
-            do {
-                guard let remoteURL = object.furniture.remoteUSDZURL else {
-                    continue
-                }
-
-                let localURL = try await RemoteUSDZCache.shared.localFileURL(for: remoteURL)
-                let didAddOverlay = await MainActor.run {
-                    BarebonesRoomSceneBuilder.overlayExternalUSDZ(
-                        on: scene,
-                        fileURL: localURL,
-                        overlayIdentifier: object.id
-                    )
-                }
-
-                guard didAddOverlay else {
-                    continue
-                }
-
-                await MainActor.run {
-                    if let restoredNode = scene.rootNode.childNode(withName: nodeName, recursively: true) {
-                        object.placement.apply(to: restoredNode)
-                    }
-                    hasOverlayedExternalUSDZ = true
-                }
-            } catch {
-                await MainActor.run {
-                    isShowingOverlayError = true
-                }
-            }
-        }
-    }
-}
-
-private struct ImportedRoomSceneView: UIViewRepresentable {
+struct ImportedRoomSceneView: UIViewRepresentable {
     let scene: SCNScene
     let interactionMode: FurnitureInteractionMode
 
@@ -816,25 +64,25 @@ private struct ImportedRoomSceneView: UIViewRepresentable {
         scnView.defaultCameraController.interactionMode = .orbitTurntable
         scnView.isPlaying = true
 
-        let panGestureRecognizer = UIPanGestureRecognizer(
+        let panGesture = UIPanGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handlePanGesture(_:))
         )
-        panGestureRecognizer.maximumNumberOfTouches = 1
-        scnView.addGestureRecognizer(panGestureRecognizer)
+        panGesture.maximumNumberOfTouches = 1
+        scnView.addGestureRecognizer(panGesture)
 
-        let rotationGestureRecognizer = UIRotationGestureRecognizer(
+        let rotationGesture = UIRotationGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleRotationGesture(_:))
         )
-        scnView.addGestureRecognizer(rotationGestureRecognizer)
+        scnView.addGestureRecognizer(rotationGesture)
 
-        context.coordinator.panGestureRecognizer = panGestureRecognizer
-        context.coordinator.rotationGestureRecognizer = rotationGestureRecognizer
+        context.coordinator.panGestureRecognizer = panGesture
+        context.coordinator.rotationGestureRecognizer = rotationGesture
         context.coordinator.sceneView = scnView
         context.coordinator.interactionMode = interactionMode
-        panGestureRecognizer.delegate = context.coordinator
-        rotationGestureRecognizer.delegate = context.coordinator
+        panGesture.delegate = context.coordinator
+        rotationGesture.delegate = context.coordinator
 
         return scnView
     }
@@ -860,44 +108,33 @@ private struct ImportedRoomSceneView: UIViewRepresentable {
         var interactionMode: FurnitureInteractionMode = .view
         var movementPlaneY: Float = 0
 
-        @objc func handlePanGesture(_ gestureRecognizer: UIPanGestureRecognizer) {
+        @objc func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
             guard interactionMode != .view, let sceneView else {
                 cancelDragging()
                 return
             }
-
-            let location = gestureRecognizer.location(in: sceneView)
-
-            switch gestureRecognizer.state {
-            case .began:
-                beginDragging(at: location, in: sceneView)
-            case .changed:
-                updateDragging(at: location, in: sceneView)
-            case .ended, .cancelled, .failed:
-                cancelDragging()
-            default:
-                break
+            let location = gesture.location(in: sceneView)
+            switch gesture.state {
+            case .began: beginDragging(at: location, in: sceneView)
+            case .changed: updateDragging(at: location, in: sceneView)
+            case .ended, .cancelled, .failed: cancelDragging()
+            default: break
             }
         }
 
-        @objc func handleRotationGesture(_ gestureRecognizer: UIRotationGestureRecognizer) {
+        @objc func handleRotationGesture(_ gesture: UIRotationGestureRecognizer) {
             guard interactionMode == .move, let sceneView else {
                 cancelDragging()
                 return
             }
-
-            let location = gestureRecognizer.location(in: sceneView)
-
-            switch gestureRecognizer.state {
-            case .began:
-                beginDragging(at: location, in: sceneView)
+            let location = gesture.location(in: sceneView)
+            switch gesture.state {
+            case .began: beginDragging(at: location, in: sceneView)
             case .changed:
-                updateRotation(with: gestureRecognizer.rotation)
-                gestureRecognizer.rotation = 0
-            case .ended, .cancelled, .failed:
-                cancelDragging()
-            default:
-                break
+                updateRotation(with: gesture.rotation)
+                gesture.rotation = 0
+            case .ended, .cancelled, .failed: cancelDragging()
+            default: break
             }
         }
 
@@ -906,25 +143,19 @@ private struct ImportedRoomSceneView: UIViewRepresentable {
         }
 
         private func beginDragging(at location: CGPoint, in sceneView: SCNView) {
-            let hitResults = sceneView.hitTest(location, options: nil)
-
-            for result in hitResults {
+            for result in sceneView.hitTest(location, options: nil) {
                 if let overlayNode = overlayAncestor(for: result.node) {
                     draggedNode = overlayNode
                     movementPlaneY = overlayNode.presentation.worldPosition.y
                     return
                 }
             }
-
             draggedNode = nil
         }
 
         private func updateDragging(at location: CGPoint, in sceneView: SCNView) {
             guard let draggedNode,
-                  let intersection = worldPointOnMovementPlane(for: location, in: sceneView, planeY: movementPlaneY) else {
-                return
-            }
-
+                  let intersection = worldPointOnPlane(for: location, in: sceneView, planeY: movementPlaneY) else { return }
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 0
             draggedNode.worldPosition = SCNVector3(intersection.x, movementPlaneY, intersection.z)
@@ -932,10 +163,7 @@ private struct ImportedRoomSceneView: UIViewRepresentable {
         }
 
         private func updateRotation(with rotation: CGFloat) {
-            guard let draggedNode else {
-                return
-            }
-
+            guard let draggedNode else { return }
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 0
             draggedNode.eulerAngles.y -= Float(rotation)
@@ -944,58 +172,45 @@ private struct ImportedRoomSceneView: UIViewRepresentable {
 
         func gestureRecognizer(
             _ gestureRecognizer: UIGestureRecognizer,
-            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-        ) -> Bool {
-            false
-        }
+            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+        ) -> Bool { false }
 
         private func overlayAncestor(for node: SCNNode) -> SCNNode? {
-            var currentNode: SCNNode? = node
-
-            while let candidate = currentNode {
-                if candidate.name?.hasPrefix("external-usdz-overlay") == true {
-                    return candidate
-                }
-                currentNode = candidate.parent
+            var current: SCNNode? = node
+            while let candidate = current {
+                if candidate.name?.hasPrefix("external-usdz-overlay") == true { return candidate }
+                current = candidate.parent
             }
-
             return nil
         }
 
-        private func worldPointOnMovementPlane(
-            for location: CGPoint,
-            in sceneView: SCNView,
-            planeY: Float
-        ) -> SCNVector3? {
-            let nearPoint = sceneView.unprojectPoint(SCNVector3(Float(location.x), Float(location.y), 0))
-            let farPoint = sceneView.unprojectPoint(SCNVector3(Float(location.x), Float(location.y), 1))
-            let direction = farPoint - nearPoint
-
-            guard abs(direction.y) > 0.0001 else {
-                return nil
-            }
-
-            let distance = (planeY - nearPoint.y) / direction.y
-            guard distance.isFinite else {
-                return nil
-            }
-
-            return nearPoint + (direction * distance)
+        private func worldPointOnPlane(for location: CGPoint, in sceneView: SCNView, planeY: Float) -> SCNVector3? {
+            let near = sceneView.unprojectPoint(SCNVector3(Float(location.x), Float(location.y), 0))
+            let far = sceneView.unprojectPoint(SCNVector3(Float(location.x), Float(location.y), 1))
+            let dir = far - near
+            guard abs(dir.y) > 0.0001 else { return nil }
+            let t = (planeY - near.y) / dir.y
+            guard t.isFinite else { return nil }
+            return near + (dir * t)
         }
     }
 }
 
-private func +(lhs: SCNVector3, rhs: SCNVector3) -> SCNVector3 {
+// MARK: - SCNVector3 Arithmetic
+
+func +(lhs: SCNVector3, rhs: SCNVector3) -> SCNVector3 {
     SCNVector3(lhs.x + rhs.x, lhs.y + rhs.y, lhs.z + rhs.z)
 }
 
-private func -(lhs: SCNVector3, rhs: SCNVector3) -> SCNVector3 {
+func -(lhs: SCNVector3, rhs: SCNVector3) -> SCNVector3 {
     SCNVector3(lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z)
 }
 
-private func *(vector: SCNVector3, scalar: Float) -> SCNVector3 {
+func *(vector: SCNVector3, scalar: Float) -> SCNVector3 {
     SCNVector3(vector.x * scalar, vector.y * scalar, vector.z * scalar)
 }
+
+// MARK: - SCNScene Identifiable
 
 extension SCNScene: @retroactive Identifiable {
     public var id: ObjectIdentifier {
