@@ -581,13 +581,7 @@ struct RemoteDesign: Decodable {
     }()
 }
 
-struct RemoteRoomShell: Decodable {
-    let room: RemoteRoom
-}
-
-struct RemoteRoom: Decodable {
-    let type: String
-}
+typealias RemoteRoomShell = SanitizedRoomPayload
 
 struct DesignValidationErrorResponse: Decodable {
     let detail: [DesignValidationErrorItem]

@@ -9,6 +9,16 @@ struct DesignSummary: Identifiable {
     let furnitureCount: Int
     let createdAt: Date
     let accentColor: Color
+    let shell: SanitizedRoomPayload
+}
+
+struct RoomEditorSession: Identifiable {
+    let id = UUID()
+    let designID: String
+    let scene: SCNScene
+    let title: String
+    let baseRoomData: Data
+    let initialPlacedObjects: [PlacedFurnitureObject]
 }
 
 enum RoomImportMode {
@@ -27,14 +37,14 @@ final class DesignsListViewModel: ObservableObject {
     @Published var isShowingStyleQuiz = false
 
     @Published var importMode: RoomImportMode = .barebones
-    @Published var importedScene: SCNScene?
-    @Published var importedRoomData = Data()
-    @Published var importedPlacedObjects: [PlacedFurnitureObject] = []
-    @Published var importedFileName = ""
+    @Published var activeEditorSession: RoomEditorSession?
     @Published var importErrorMessage = ""
     @Published var isShowingImportError = false
     @Published var designsLoadErrorMessage = ""
     @Published var isShowingDesignsLoadError = false
+    @Published var isLoadingDesignID: String?
+    @Published var designOpenErrorMessage = ""
+    @Published var isShowingDesignOpenError = false
     @Published var isSavingStylePreferences = false
     @Published var stylePreferencesErrorMessage = ""
     @Published var isShowingStylePreferencesError = false
@@ -144,20 +154,54 @@ final class DesignsListViewModel: ObservableObject {
                 hasLoadedDesigns = true
 
                 scene = try BarebonesRoomImportLoader.loadScene(from: mergedRoom.roomData)
-                importedRoomData = mergedRoom.roomData
-                importedPlacedObjects = mergedRoom.objects
+                activeEditorSession = RoomEditorSession(
+                    designID: createdDesign.id,
+                    scene: scene,
+                    title: importedName,
+                    baseRoomData: mergedRoom.roomData,
+                    initialPlacedObjects: mergedRoom.objects
+                )
             case .stripFurniture: // This will never happen since we removed the third option in the list when + button is clicked
                 let strippedData = try BarebonesRoomJSONSanitizer.stripToEssentialSurfaces(from: data)
                 scene = try BarebonesRoomImportLoader.loadScene(from: strippedData)
-                importedRoomData = strippedData
-                importedPlacedObjects = []
+                activeEditorSession = RoomEditorSession(
+                    designID: UUID().uuidString,
+                    scene: scene,
+                    title: importedName,
+                    baseRoomData: strippedData,
+                    initialPlacedObjects: []
+                )
             }
-
-            importedFileName = importedName
-            importedScene = scene
         } catch {
             importErrorMessage = error.localizedDescription
             isShowingImportError = true
+        }
+    }
+
+    @MainActor
+    func openDesignForEditing(_ design: DesignSummary) async {
+        guard isLoadingDesignID == nil else { return }
+        isLoadingDesignID = design.id
+        isShowingDesignOpenError = false
+        designOpenErrorMessage = ""
+
+        defer { isLoadingDesignID = nil }
+
+        do {
+            let fetchedObjects = try await FurnitureAPIClient.shared.fetchDesignObjects(designID: design.id)
+            let roomPayload = design.shell.replacingObjects(with: fetchedObjects)
+            let roomData = try RoomJSONSanitizer.sanitizedJSONData(from: roomPayload)
+            let scene = try BarebonesRoomImportLoader.loadScene(from: roomData)
+            activeEditorSession = RoomEditorSession(
+                designID: design.id,
+                scene: scene,
+                title: design.name,
+                baseRoomData: roomData,
+                initialPlacedObjects: fetchedObjects
+            )
+        } catch {
+            designOpenErrorMessage = error.localizedDescription
+            isShowingDesignOpenError = true
         }
     }
 }
@@ -166,10 +210,11 @@ private extension DesignSummary {
     init(remoteDesign: RemoteDesign) {
         id = remoteDesign.id
         name = remoteDesign.name
-        roomType = remoteDesign.shell.room.type
+        roomType = remoteDesign.shell.room.type ?? "room"
         furnitureCount = remoteDesign.objects.count
         createdAt = remoteDesign.createdAt
         accentColor = Self.accentColor(for: remoteDesign)
+        shell = remoteDesign.shell
     }
 
     static func accentColor(for remoteDesign: RemoteDesign) -> Color {

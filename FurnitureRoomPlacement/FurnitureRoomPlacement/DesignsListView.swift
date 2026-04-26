@@ -77,12 +77,13 @@ struct DesignsListView: View {
             .fullScreenCover(isPresented: $viewModel.isShowingScan) {
                 RoomCaptureContainerView()
             }
-            .fullScreenCover(item: $viewModel.importedScene) { scene in
+            .fullScreenCover(item: $viewModel.activeEditorSession) { session in
                 RoomEditorView(
-                    scene: scene,
-                    title: viewModel.importedFileName,
-                    baseRoomData: viewModel.importedRoomData,
-                    initialPlacedObjects: viewModel.importedPlacedObjects
+                    scene: session.scene,
+                    title: session.title,
+                    baseRoomData: session.baseRoomData,
+                    initialPlacedObjects: session.initialPlacedObjects,
+                    designID: session.designID
                 )
             }
             .sheet(isPresented: $viewModel.isShowingUnsupportedDeviceSheet) {
@@ -125,6 +126,11 @@ struct DesignsListView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(viewModel.designsLoadErrorMessage)
+            }
+            .alert("Couldn't Open Design", isPresented: $viewModel.isShowingDesignOpenError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(viewModel.designOpenErrorMessage)
             }
             .alert("Couldn't Save Preferences", isPresented: $viewModel.isShowingStylePreferencesError) {
                 Button("OK", role: .cancel) { }
@@ -201,7 +207,12 @@ struct DesignsListView: View {
             spacing: 12
         ) {
             ForEach(viewModel.filteredDesigns) { design in
-                DesignCard(design: design)
+                DesignCard(
+                    design: design,
+                    isLoading: viewModel.isLoadingDesignID == design.id
+                ) {
+                    Task { await viewModel.openDesignForEditing(design) }
+                }
             }
         }
         .padding(16)
@@ -278,6 +289,8 @@ private struct RefreshableScrollView<Content: View>: UIViewRepresentable {
 
 private struct DesignCard: View {
     let design: DesignSummary
+    let isLoading: Bool
+    let onEdit: () -> Void
     @State private var isPressed = false
 
     var body: some View {
@@ -314,11 +327,22 @@ private struct DesignCard: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                     Spacer()
-                    Image(systemName: "pencil")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.primary)
+                    Button(action: onEdit) {
+                        Group {
+                            if isLoading {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                            }
+                        }
                         .frame(width: 32, height: 32)
                         .background(Color(.secondarySystemBackground), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isLoading)
                 }
                 .padding(.top, 2)
                 .padding(.leading, 10)
