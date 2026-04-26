@@ -156,7 +156,8 @@ def _format_room_digest(design: dict[str, Any]) -> str:
         lines.append("Openings: none")
 
     if walls:
-        lines.append(f"Walls: {len(walls)} (geometry available via get_room_state if needed)")
+        lines.append(
+            f"Walls: {len(walls)} (geometry available via get_room_state if needed)")
 
     if placed:
         lines.append(f"Placed items ({len(placed)}):")
