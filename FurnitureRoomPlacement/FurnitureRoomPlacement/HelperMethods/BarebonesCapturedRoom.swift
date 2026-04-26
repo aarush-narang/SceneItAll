@@ -707,83 +707,34 @@ enum BarebonesRoomSceneBuilder {
     private static func normalizedImportedNode(from node: SCNNode) -> NormalizedImport {
         let containerNode = SCNNode()
         let modelNode = node.clone()
-
-        // Apply IKEA's Z-up → SceneKit Y-up correction first; the AABB used for
-        // pivot alignment must reflect the rotated geometry, not the source one.
         modelNode.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
         modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
         modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
-
-        // Compute the rotated AABB by transforming each of the geometry's
-        // 8 corners through modelNode's current transform (rotation only at
-        // this point; scale/position are still defaults). We use the model's
-        // own geometry box since `containerNode.boundingBox` would be empty.
-        let (geomMin, geomMax) = modelNode.boundingBox
-        let corners: [SCNVector3] = [
-            SCNVector3(geomMin.x, geomMin.y, geomMin.z),
-            SCNVector3(geomMin.x, geomMin.y, geomMax.z),
-            SCNVector3(geomMin.x, geomMax.y, geomMin.z),
-            SCNVector3(geomMin.x, geomMax.y, geomMax.z),
-            SCNVector3(geomMax.x, geomMin.y, geomMin.z),
-            SCNVector3(geomMax.x, geomMin.y, geomMax.z),
-            SCNVector3(geomMax.x, geomMax.y, geomMin.z),
-            SCNVector3(geomMax.x, geomMax.y, geomMax.z),
-        ]
-        let rotation = SCNMatrix4MakeRotation(
-            modelNode.eulerAngles.x, 1, 0, 0
-        )
-        var rotatedMin = SCNVector3(Float.infinity, Float.infinity, Float.infinity)
-        var rotatedMax = SCNVector3(-Float.infinity, -Float.infinity, -Float.infinity)
-        for corner in corners {
-            let r = transformPoint(corner, by: rotation)
-            rotatedMin.x = min(rotatedMin.x, r.x); rotatedMax.x = max(rotatedMax.x, r.x)
-            rotatedMin.y = min(rotatedMin.y, r.y); rotatedMax.y = max(rotatedMax.y, r.y)
-            rotatedMin.z = min(rotatedMin.z, r.z); rotatedMax.z = max(rotatedMax.z, r.z)
-        }
-
-        // Sanity-clamp absurdly large or tiny imports (rare for IKEA, kept as a guard).
-        let largestDimension = max(
-            rotatedMax.x - rotatedMin.x,
-            rotatedMax.y - rotatedMin.y,
-            rotatedMax.z - rotatedMin.z
-        )
-        let scaleFactor: Float
-        if largestDimension > 5 {
-            scaleFactor = 1 / largestDimension
-        } else if largestDimension > 0, largestDimension < 0.05 {
-            scaleFactor = 0.5 / largestDimension
-        } else {
-            scaleFactor = 1
-        }
-        if scaleFactor != 1 {
-            modelNode.scale = SCNVector3(scaleFactor, scaleFactor, scaleFactor)
-        }
-
-        // Pivot the model at its rotated geometric center so the container's
-        // origin matches the placement convention used by the server
-        // (`position.y = detected_floor + item_height / 2`).
-        let centerX = (rotatedMin.x + rotatedMax.x) / 2 * scaleFactor
-        let centerY = (rotatedMin.y + rotatedMax.y) / 2 * scaleFactor
-        let centerZ = (rotatedMin.z + rotatedMax.z) / 2 * scaleFactor
-        modelNode.position.x = -centerX
-        modelNode.position.y = -centerY
-        modelNode.position.z = -centerZ
-
         containerNode.addChildNode(modelNode)
 
-        let halfHeight = (rotatedMax.y - rotatedMin.y) * scaleFactor / 2
-        return NormalizedImport(node: containerNode, halfHeight: halfHeight)
-    }
-
-    /// Transforms a point by a 4x4 (treating it as a position with w=1).
-    /// SceneKit stores SCNMatrix4 in column-major order with `mij` denoting
-    /// row i, column j (1-indexed), so the multiply expands as below.
-    private static func transformPoint(_ p: SCNVector3, by m: SCNMatrix4) -> SCNVector3 {
-        return SCNVector3(
-            m.m11 * p.x + m.m21 * p.y + m.m31 * p.z + m.m41,
-            m.m12 * p.x + m.m22 * p.y + m.m32 * p.z + m.m42,
-            m.m13 * p.x + m.m23 * p.y + m.m33 * p.z + m.m43
+        var (minimumBounds, maximumBounds) = containerNode.boundingBox
+        let largestDimension = max(
+            maximumBounds.x - minimumBounds.x,
+            maximumBounds.y - minimumBounds.y,
+            maximumBounds.z - minimumBounds.z
         )
+
+        if largestDimension > 5 {
+            let scale = 1 / largestDimension
+            modelNode.scale = SCNVector3(scale, scale, scale)
+        } else if largestDimension > 0, largestDimension < 0.05 {
+            let scale = 0.5 / largestDimension
+            modelNode.scale = SCNVector3(scale, scale, scale)
+        }
+
+        (minimumBounds, maximumBounds) = containerNode.boundingBox
+        let centerX = (minimumBounds.x + maximumBounds.x) / 2
+        let centerZ = (minimumBounds.z + maximumBounds.z) / 2
+        modelNode.position.x -= centerX
+        modelNode.position.y -= minimumBounds.y
+        modelNode.position.z -= centerZ
+
+        return containerNode
     }
 
     private static func placementPosition(in rootNode: SCNNode) -> SCNVector3 {

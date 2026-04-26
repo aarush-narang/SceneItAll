@@ -471,25 +471,26 @@ private func containsRenderable(_ node: SCNNode) -> Bool {
 private func normalizedPreviewNode(from node: SCNNode) -> SCNNode {
     let container = SCNNode()
     let model = node.clone()
-    let (minBounds, maxBounds) = node.boundingBox
-    let cx = (minBounds.x + maxBounds.x) / 2
-    let cz = (minBounds.z + maxBounds.z) / 2
-    let largest = max(maxBounds.x - minBounds.x, maxBounds.y - minBounds.y, maxBounds.z - minBounds.z)
-
-    model.position.x -= cx
-    model.position.y -= minBounds.y
-    model.position.z -= cz
-
-    if largest > 0 {
-        let scale = Float(1.8) / largest
-        model.scale = SCNVector3(scale, scale, scale)
-    }
-
     model.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
     model.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
     model.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
 
     container.addChildNode(model)
+
+    var (minBounds, maxBounds) = container.boundingBox
+    let largest = max(maxBounds.x - minBounds.x, maxBounds.y - minBounds.y, maxBounds.z - minBounds.z)
+    if largest > 0 {
+        let scale = Float(1.8) / largest
+        model.scale = SCNVector3(scale, scale, scale)
+    }
+
+    (minBounds, maxBounds) = container.boundingBox
+    let cx = (minBounds.x + maxBounds.x) / 2
+    let cz = (minBounds.z + maxBounds.z) / 2
+    model.position.x -= cx
+    model.position.y -= minBounds.y
+    model.position.z -= cz
+
     container.position.y = 0.2
     return container
 }
