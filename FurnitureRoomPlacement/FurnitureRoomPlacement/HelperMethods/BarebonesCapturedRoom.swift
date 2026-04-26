@@ -835,6 +835,18 @@ enum BarebonesRoomSceneBuilder {
         return SCNVector3(centerX, floor, centerZ)
     }
 
+    /// Half the vertical extent of the geometry under `containerNode`, in the
+    /// container's local frame. For overlay containers produced by
+    /// `normalizedImportedNode` (origin = AABB center), this is the offset
+    /// needed to convert between the agent's BOTTOM-Y convention
+    /// (`position.y = floor_y`) and our scene's CENTER-Y convention
+    /// (`node.position.y = floor_y + halfHeight`). Returns 0 if the container
+    /// has no descendant geometry.
+    static func placementHalfHeight(of containerNode: SCNNode) -> Float {
+        guard let (lo, hi) = combinedDescendantBoundingBox(of: containerNode) else { return 0 }
+        return max(0, (hi.y - lo.y) / 2)
+    }
+
     /// World Y of the floor's geometry in `rootNode`'s frame, by walking child
     /// nodes named `floor-*`. Returns nil if no floor nodes are present.
     private static func floorY(in rootNode: SCNNode) -> Float? {

@@ -151,6 +151,27 @@ final class FurnitureAPIClient {
         try await sendRequest(url: url, method: "PATCH", body: payload)
     }
 
+    func removeObjectFromDesign(
+        instanceID: String,
+        designID: String? = nil,
+        designName: String,
+        preferenceProfileID: String? = nil
+    ) async throws {
+        let resolvedDesignID = designID ?? Self.defaultDesignID()
+        let payload = DesignPatchRequest(
+            name: designName,
+            preferenceProfileID: preferenceProfileID ?? Self.defaultPreferenceProfileID(),
+            addItems: [],
+            updateItems: [],
+            deleteInstanceIDs: [instanceID]
+        )
+
+        let url = baseURL
+            .appending(path: "/designs")
+            .appending(path: resolvedDesignID)
+        try await sendRequest(url: url, method: "PATCH", body: payload)
+    }
+
     func agentChat(
         message: String,
         sessionID: String?,

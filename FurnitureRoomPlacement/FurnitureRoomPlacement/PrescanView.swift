@@ -50,6 +50,7 @@ struct UnsupportedDeviceView: View {
 struct ImportedRoomSceneView: UIViewRepresentable {
     let scene: SCNScene
     let interactionMode: FurnitureInteractionMode
+    var onTapObject: (String) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -77,12 +78,25 @@ struct ImportedRoomSceneView: UIViewRepresentable {
         )
         scnView.addGestureRecognizer(rotationGesture)
 
+        let tapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleTapGesture(_:))
+        )
+        tapGesture.numberOfTapsRequired = 1
+        tapGesture.cancelsTouchesInView = false
+        scnView.addGestureRecognizer(tapGesture)
+
         context.coordinator.panGestureRecognizer = panGesture
         context.coordinator.rotationGestureRecognizer = rotationGesture
+        context.coordinator.tapGestureRecognizer = tapGesture
         context.coordinator.sceneView = scnView
         context.coordinator.interactionMode = interactionMode
+        context.coordinator.onTapObject = onTapObject
         panGesture.delegate = context.coordinator
         rotationGesture.delegate = context.coordinator
+        // Intentionally not setting tapGesture.delegate — taps are discrete and
+        // should fire alongside the SCNView's camera-orbit gestures rather than
+        // be excluded by the coordinator's `shouldRecognizeSimultaneouslyWith`.
 
         return scnView
     }
@@ -92,6 +106,7 @@ struct ImportedRoomSceneView: UIViewRepresentable {
         scnView.allowsCameraControl = interactionMode == .view
         context.coordinator.sceneView = scnView
         context.coordinator.interactionMode = interactionMode
+        context.coordinator.onTapObject = onTapObject
         context.coordinator.panGestureRecognizer?.isEnabled = interactionMode != .view
         context.coordinator.rotationGestureRecognizer?.isEnabled = interactionMode != .view
 
@@ -105,8 +120,29 @@ struct ImportedRoomSceneView: UIViewRepresentable {
         weak var draggedNode: SCNNode?
         weak var panGestureRecognizer: UIPanGestureRecognizer?
         weak var rotationGestureRecognizer: UIRotationGestureRecognizer?
+        weak var tapGestureRecognizer: UITapGestureRecognizer?
         var interactionMode: FurnitureInteractionMode = .view
         var movementPlaneY: Float = 0
+        var onTapObject: (String) -> Void = { _ in }
+
+        @objc func handleTapGesture(_ gesture: UITapGestureRecognizer) {
+            // Only open the detail popup in .view mode — in .move mode the user
+            // is dragging, and a tap-to-popup would interrupt that flow.
+            guard gesture.state == .ended,
+                  interactionMode == .view,
+                  let sceneView else { return }
+            let location = gesture.location(in: sceneView)
+            for result in sceneView.hitTest(location, options: nil) {
+                guard let overlayNode = overlayAncestor(for: result.node),
+                      let name = overlayNode.name else { continue }
+                let prefix = BarebonesRoomSceneBuilder.overlayNodeNamePrefix
+                guard name.hasPrefix(prefix) else { continue }
+                let identifier = String(name.dropFirst(prefix.count))
+                guard !identifier.isEmpty else { continue }
+                onTapObject(identifier)
+                return
+            }
+        }
 
         @objc func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
             guard interactionMode != .view, let sceneView else {
@@ -178,7 +214,9 @@ struct ImportedRoomSceneView: UIViewRepresentable {
         private func overlayAncestor(for node: SCNNode) -> SCNNode? {
             var current: SCNNode? = node
             while let candidate = current {
-                if candidate.name?.hasPrefix("external-usdz-overlay") == true { return candidate }
+                if candidate.name?.hasPrefix(BarebonesRoomSceneBuilder.overlayNodeNamePrefix) == true {
+                    return candidate
+                }
                 current = candidate.parent
             }
             return nil

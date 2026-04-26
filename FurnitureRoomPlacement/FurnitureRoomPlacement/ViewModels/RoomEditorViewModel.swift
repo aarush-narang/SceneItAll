@@ -40,6 +40,7 @@ final class RoomEditorViewModel: ObservableObject {
         )
     ]
     @Published var pendingPlacementPreview: [String: FurniturePlacement] = [:]
+    @Published var selectedObject: PlacedFurnitureObject?
 
     private var agentSessionID: String?
     private var previewOriginalPlacements: [String: FurniturePlacement] = [:]
@@ -128,6 +129,48 @@ final class RoomEditorViewModel: ObservableObject {
     func handleFurnitureAdded(_ placedObject: PlacedFurnitureObject) {
         placedObjects.append(placedObject)
         Task { await syncAddedFurnitureObject(placedObject) }
+    }
+
+    func handleObjectTapped(_ identifier: String) {
+        guard let object = placedObjects.first(where: { $0.id == identifier }) else { return }
+        selectedObject = currentPlacement(for: object)
+    }
+
+    func deleteSelectedObject() {
+        guard let object = selectedObject else { return }
+        let identifier = object.id
+
+        let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: identifier)
+        scene.rootNode
+            .childNode(withName: nodeName, recursively: true)?
+            .removeFromParentNode()
+
+        placedObjects.removeAll { $0.id == identifier }
+        pendingPlacementPreview.removeValue(forKey: identifier)
+        previewOriginalPlacements.removeValue(forKey: identifier)
+        selectedObject = nil
+
+        if placedObjects.isEmpty {
+            hasOverlayedExternalUSDZ = false
+            if furnitureInteractionMode == .move {
+                furnitureInteractionMode = .view
+            }
+        }
+
+        Task { await syncRemovedFurnitureObject(identifier) }
+    }
+
+    private func syncRemovedFurnitureObject(_ identifier: String) async {
+        do {
+            try await FurnitureAPIClient.shared.removeObjectFromDesign(
+                instanceID: identifier,
+                designID: designID,
+                designName: resolvedTitle
+            )
+        } catch {
+            syncErrorMessage = error.localizedDescription
+            isShowingSyncError = true
+        }
     }
 
     private func syncAddedFurnitureObject(_ object: PlacedFurnitureObject) async {
@@ -250,17 +293,64 @@ final class RoomEditorViewModel: ObservableObject {
     }
 
     private func applyPlacementResponse(_ response: AgentChatResponse, fallbackMessage: String) {
-        let suggested = response.placements.reduce(into: [String: FurniturePlacement]()) { $0[$1.objectID] = $1.placement }
-        guard !suggested.isEmpty else {
+        let rawSuggested = response.placements.reduce(into: [String: FurniturePlacement]()) { $0[$1.objectID] = $1.placement }
+        guard !rawSuggested.isEmpty else {
             appendMessage(response.assistantText)
             return
         }
+        let suggested = correctedAgentPlacements(rawSuggested)
         let current = placedObjects.map { currentPlacement(for: $0) }
         previewOriginalPlacements = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0.placement) })
         pendingPlacementPreview = suggested
         placedObjects = applyingPlacements(suggested, to: current)
         applyPlacementsToScene(suggested)
         appendMessage(cleanSummary(from: response.assistantText) ?? fallbackMessage)
+    }
+
+    /// The agent's placement contract (`place_item.py`) sets `position.y` to the
+    /// BOTTOM of the item — `position.y = floor_y`. Our SCN overlay containers
+    /// pivot at the AABB CENTER, so applying that y verbatim sinks each model
+    /// by `halfHeight` into the floor. Add the model's measured half-height to
+    /// land the bottom on the floor and keep the stored placement consistent
+    /// with manually-placed items (which already use center-Y).
+    private func correctedAgentPlacements(
+        _ raw: [String: FurniturePlacement]
+    ) -> [String: FurniturePlacement] {
+        var corrected: [String: FurniturePlacement] = [:]
+        for (objectID, placement) in raw {
+            let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: objectID)
+            guard let node = scene.rootNode.childNode(withName: nodeName, recursively: true) else {
+                corrected[objectID] = placement
+                continue
+            }
+            corrected[objectID] = liftedToCenterY(placement, halfHeight: BarebonesRoomSceneBuilder.placementHalfHeight(of: node))
+        }
+        return corrected
+    }
+
+    /// Apply a persisted placement (from MongoDB) to a freshly-loaded overlay
+    /// node. Agent-placed items are stored with BOTTOM-Y (`y = floor_y`);
+    /// user-placed items are stored with CENTER-Y. We always want CENTER-Y in
+    /// the scene because that matches our container pivot, so promote agent
+    /// placements by `halfHeight` here. iOS never writes corrected values back
+    /// to the backend (manual saves only run for user-added items via
+    /// `addObjectToDesign`), so the convention stays stable across reloads.
+    private func applyPersistedPlacement(of object: PlacedFurnitureObject, to node: SCNNode) {
+        guard object.placedBy == "agent" else {
+            object.placement.apply(to: node)
+            return
+        }
+        let halfHeight = BarebonesRoomSceneBuilder.placementHalfHeight(of: node)
+        liftedToCenterY(object.placement, halfHeight: halfHeight).apply(to: node)
+    }
+
+    private func liftedToCenterY(_ placement: FurniturePlacement, halfHeight: Float) -> FurniturePlacement {
+        var fixed = placement
+        while fixed.position.count < 3 {
+            fixed.position.append(0)
+        }
+        fixed.position[1] += halfHeight
+        return fixed
     }
 
     private func appendMessage(_ text: String) {
@@ -344,7 +434,7 @@ final class RoomEditorViewModel: ObservableObject {
                 guard didAdd else { continue }
                 let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: object.id)
                 if let restoredNode = scene.rootNode.childNode(withName: nodeName, recursively: true) {
-                    object.placement.apply(to: restoredNode)
+                    applyPersistedPlacement(of: object, to: restoredNode)
                     restoredAnyObject = true
                 }
             } catch {
@@ -379,7 +469,7 @@ final class RoomEditorViewModel: ObservableObject {
                 let didAdd = BarebonesRoomSceneBuilder.overlayExternalUSDZ(on: scene, fileURL: localURL, overlayIdentifier: object.id)
                 guard didAdd else { continue }
                 if let restoredNode = scene.rootNode.childNode(withName: nodeName, recursively: true) {
-                    object.placement.apply(to: restoredNode)
+                    applyPersistedPlacement(of: object, to: restoredNode)
                 }
                 hasOverlayedExternalUSDZ = true
             } catch {
