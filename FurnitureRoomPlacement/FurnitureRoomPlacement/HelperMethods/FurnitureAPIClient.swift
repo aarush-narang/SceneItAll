@@ -3,9 +3,6 @@ import Foundation
 final class FurnitureAPIClient {
     static let shared = FurnitureAPIClient()
 
-    private static let userDefaults = UserDefaults.standard
-    private static let generatedUserIDKey = "FurnitureGeneratedUserID"
-
     private let baseURL: URL
     private let session: URLSession
     private let decoder: JSONDecoder
@@ -108,6 +105,18 @@ final class FurnitureAPIClient {
         return try await sendRequest(url: url, method: "POST", body: payload)
     }
 
+    func upsertPreferences(
+        _ preferences: PreferenceProfileUpsert,
+        userID: String? = nil
+    ) async throws {
+        let resolvedUserID = userID ?? Self.defaultUserID()
+        let url = baseURL
+            .appending(path: "/preferences")
+            .appending(path: resolvedUserID)
+
+        try await sendRequest(url: url, method: "PUT", body: preferences)
+    }
+
     private func sendRequest<T: Decodable>(url: URL) async throws -> T {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -146,12 +155,17 @@ final class FurnitureAPIClient {
         let response: URLResponse
 
         do {
+            log("Sending \(method) request to \(url.absoluteString)")
             (data, response) = try await session.data(for: request)
         } catch let error as URLError {
+            log("Transport error for \(method) \(url.absoluteString): \(error.localizedDescription)")
             throw FurnitureAPIClientError.transportError(url: url, underlying: error)
         }
 
         try validate(response: response, data: data)
+        if let httpResponse = response as? HTTPURLResponse {
+            log("Received status \(httpResponse.statusCode) from \(method) \(url.absoluteString)")
+        }
     }
 
     private func sendRequest<TResponse: Decodable, TBody: Encodable>(
@@ -174,12 +188,17 @@ final class FurnitureAPIClient {
         let response: URLResponse
 
         do {
+            log("Sending \(method) request to \(url.absoluteString)")
             (data, response) = try await session.data(for: request)
         } catch let error as URLError {
+            log("Transport error for \(method) \(url.absoluteString): \(error.localizedDescription)")
             throw FurnitureAPIClientError.transportError(url: url, underlying: error)
         }
 
         try validate(response: response, data: data)
+        if let httpResponse = response as? HTTPURLResponse {
+            log("Received status \(httpResponse.statusCode) from \(method) \(url.absoluteString)")
+        }
         do {
             return try decoder.decode(TResponse.self, from: data)
         } catch {
@@ -229,14 +248,7 @@ final class FurnitureAPIClient {
             return configuredUserID
         }
 
-        if let persistedUserID = userDefaults.string(forKey: generatedUserIDKey),
-           !persistedUserID.isEmpty {
-            return persistedUserID
-        }
-
-        let generatedUserID = UUID().uuidString
-        userDefaults.set(generatedUserID, forKey: generatedUserIDKey)
-        return generatedUserID
+        return UserSession.shared.userID
     }
 }
 
@@ -379,7 +391,38 @@ struct AgentChatPlacement: Decodable {
 
 struct AgentChatToolCall: Decodable {}
 
+struct PreferenceProfileUpsert: Encodable {
+    let styleTags: [String]
+    let colorPalette: [String]
+    let materialPreferences: [String]
+    let spatialDensity: String
+    let philosophies: [String]
+    let hardRequirements: [String: String]
+
+    enum CodingKeys: String, CodingKey {
+        case styleTags = "style_tags"
+        case colorPalette = "color_palette"
+        case materialPreferences = "material_preferences"
+        case spatialDensity = "spatial_density"
+        case philosophies
+        case hardRequirements = "hard_requirements"
+    }
+}
+
 extension FurnitureAPIClient {
+    private func log(_ message: String) {
+        print("[FurnitureAPIClient] \(message)")
+    }
+
+    private func describe<T: Encodable>(_ value: T) -> String {
+        guard let data = try? encoder.encode(value),
+              let json = String(data: data, encoding: .utf8) else {
+            return "<unable to encode payload for logging>"
+        }
+
+        return json
+    }
+
     private func decodeErrorMessage(from error: Error) -> String {
         switch error {
         case let DecodingError.keyNotFound(key, context):

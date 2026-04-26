@@ -39,10 +39,52 @@ final class DesignsListViewModel: ObservableObject {
     @Published var importedFileName = ""
     @Published var importErrorMessage = ""
     @Published var isShowingImportError = false
+    @Published var isSavingStylePreferences = false
+    @Published var stylePreferencesErrorMessage = ""
+    @Published var isShowingStylePreferencesError = false
 
     var filteredDesigns: [DesignSummary] {
         if searchText.isEmpty { return designs }
         return designs.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    var currentStyleQuizResult: StyleQuizResult {
+        StyleQuizResult.fromUserDefaults()
+    }
+
+    @MainActor
+    func handleStyleQuizCompletion(_ result: StyleQuizResult) async {
+        isSavingStylePreferences = true
+        isShowingStylePreferencesError = false
+        stylePreferencesErrorMessage = ""
+
+        UserDefaults.standard.set(result.styleTags, forKey: "pref_styleTags")
+        UserDefaults.standard.set(result.colorPalette, forKey: "pref_colorPalette")
+        UserDefaults.standard.set(result.materialPreferences, forKey: "pref_materials")
+        UserDefaults.standard.set(result.spatialDensity, forKey: "pref_density")
+        UserDefaults.standard.set(result.philosophies, forKey: "pref_philosophies")
+
+        let preferences = PreferenceProfileUpsert(
+            styleTags: result.styleTags,
+            colorPalette: result.colorPalette,
+            materialPreferences: result.materialPreferences,
+            spatialDensity: result.spatialDensity,
+            philosophies: result.philosophies,
+            hardRequirements: [:]
+        )
+
+        do {
+            try await FurnitureAPIClient.shared.upsertPreferences(
+                preferences,
+                userID: UserSession.shared.userID
+            )
+            isSavingStylePreferences = false
+            isShowingStyleQuiz = false
+        } catch {
+            isSavingStylePreferences = false
+            stylePreferencesErrorMessage = error.localizedDescription
+            isShowingStylePreferencesError = true
+        }
     }
 
     @MainActor

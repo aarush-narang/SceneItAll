@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>FurnitureAPIBaseURL</key>
-	<string>https://poison-groundwater-states-excess.trycloudflare.com</string>
+	<string>https://stations-creativity-budget-sense.trycloudflare.com</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

@@ -91,7 +91,12 @@ struct DesignsListView: View {
                 .presentationDetents([.medium])
             }
             .sheet(isPresented: $viewModel.isShowingStyleQuiz) {
-                StyleQuizView { _ in viewModel.isShowingStyleQuiz = false }
+                StyleQuizView(
+                    initialResult: viewModel.currentStyleQuizResult,
+                    showsSkipButton: false
+                ) { result in
+                    Task { await viewModel.handleStyleQuizCompletion(result) }
+                }
             }
             .fileImporter(
                 isPresented: $viewModel.isShowingImporter,
@@ -104,6 +109,23 @@ struct DesignsListView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text(viewModel.importErrorMessage)
+            }
+            .alert("Couldn't Save Preferences", isPresented: $viewModel.isShowingStylePreferencesError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(viewModel.stylePreferencesErrorMessage)
+            }
+            .overlay {
+                if viewModel.isSavingStylePreferences {
+                    ZStack {
+                        Color.black.opacity(0.2)
+                            .ignoresSafeArea()
+
+                        ProgressView("Saving your preferences...")
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
             }
         }
     }

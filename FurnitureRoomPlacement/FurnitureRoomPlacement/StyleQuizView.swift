@@ -1,8 +1,19 @@
 import SwiftUI
 
 struct StyleQuizView: View {
-    @StateObject private var viewModel = StyleQuizViewModel()
+    @StateObject private var viewModel: StyleQuizViewModel
+    let showsSkipButton: Bool
     let onComplete: (StyleQuizResult) -> Void
+
+    init(
+        initialResult: StyleQuizResult = .default,
+        showsSkipButton: Bool = true,
+        onComplete: @escaping (StyleQuizResult) -> Void
+    ) {
+        _viewModel = StateObject(wrappedValue: StyleQuizViewModel(initialResult: initialResult))
+        self.showsSkipButton = showsSkipButton
+        self.onComplete = onComplete
+    }
 
     var body: some View {
         NavigationStack {
@@ -29,9 +40,11 @@ struct StyleQuizView: View {
             .navigationTitle("Your Style")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Skip") { onComplete(.default) }
-                        .foregroundStyle(.secondary)
+                if showsSkipButton {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Skip") { onComplete(.default) }
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
