@@ -8,25 +8,23 @@ struct ScanMatchingView: View {
     @StateObject private var viewModel = ScanMatchingViewModel()
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let session = viewModel.editorSession {
-                    RoomEditorView(
-                        scene: session.scene,
-                        title: session.title,
-                        baseRoomData: session.baseRoomData,
-                        initialPlacedObjects: session.initialPlacedObjects,
-                        designID: session.designID
-                    )
-                } else {
-                    matchingProgressView
-                }
+        Group {
+            if let session = viewModel.editorSession {
+                RoomEditorView(
+                    scene: session.scene,
+                    title: session.title,
+                    baseRoomData: session.baseRoomData,
+                    initialPlacedObjects: session.initialPlacedObjects,
+                    designID: session.designID
+                )
+            } else {
+                matchingProgressView
             }
-            .alert("Matching Failed", isPresented: $viewModel.isShowingError) {
-                Button("Dismiss", role: .cancel) { dismiss() }
-            } message: {
-                Text(viewModel.errorMessage)
-            }
+        }
+        .alert("Matching Failed", isPresented: $viewModel.isShowingError) {
+            Button("Dismiss", role: .cancel) { dismiss() }
+        } message: {
+            Text(viewModel.errorMessage)
         }
         .interactiveDismissDisabled(viewModel.editorSession == nil)
         .task {

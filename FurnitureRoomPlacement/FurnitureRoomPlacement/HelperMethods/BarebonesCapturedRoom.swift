@@ -685,33 +685,46 @@ enum BarebonesRoomSceneBuilder {
     private static func normalizedImportedNode(from node: SCNNode) -> SCNNode {
         let containerNode = SCNNode()
         let modelNode = node.clone()
-        let (minimumBounds, maximumBounds) = node.boundingBox
-        let centerX = (minimumBounds.x + maximumBounds.x) / 2
-        let centerZ = (minimumBounds.z + maximumBounds.z) / 2
 
-        modelNode.position.x -= centerX
-        modelNode.position.y -= minimumBounds.y
-        modelNode.position.z -= centerZ
-
-        let largestDimension = max(
-            maximumBounds.x - minimumBounds.x,
-            maximumBounds.y - minimumBounds.y,
-            maximumBounds.z - minimumBounds.z
-        )
-
-        if largestDimension > 5 {
-            let scale = 1 / largestDimension
-            modelNode.scale = SCNVector3(scale, scale, scale)
-        } else if largestDimension > 0, largestDimension < 0.05 {
-            let scale = 0.5 / largestDimension
-            modelNode.scale = SCNVector3(scale, scale, scale)
-        }
-
+        // Apply IKEA's Z-up → SceneKit Y-up correction first; the AABB used for
+        // pivot alignment must reflect the rotated geometry, not the source one.
         modelNode.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
         modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
         modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
 
+        // Read the post-rotation AABB at scale = 1 by asking the container,
+        // which composes the child's transform into its own local frame.
         containerNode.addChildNode(modelNode)
+        let (rotatedMin, rotatedMax) = containerNode.boundingBox
+
+        // Sanity-clamp absurdly large or tiny imports (rare for IKEA, kept as a guard).
+        let largestDimension = max(
+            rotatedMax.x - rotatedMin.x,
+            rotatedMax.y - rotatedMin.y,
+            rotatedMax.z - rotatedMin.z
+        )
+        let scaleFactor: Float
+        if largestDimension > 5 {
+            scaleFactor = 1 / largestDimension
+        } else if largestDimension > 0, largestDimension < 0.05 {
+            scaleFactor = 0.5 / largestDimension
+        } else {
+            scaleFactor = 1
+        }
+        if scaleFactor != 1 {
+            modelNode.scale = SCNVector3(scaleFactor, scaleFactor, scaleFactor)
+        }
+
+        // Pivot the model at its rotated geometric center so the container's
+        // origin matches the placement convention used by the server
+        // (`position.y = detected_floor + item_height / 2`).
+        let centerX = (rotatedMin.x + rotatedMax.x) / 2 * scaleFactor
+        let centerY = (rotatedMin.y + rotatedMax.y) / 2 * scaleFactor
+        let centerZ = (rotatedMin.z + rotatedMax.z) / 2 * scaleFactor
+        modelNode.position.x = -centerX
+        modelNode.position.y = -centerY
+        modelNode.position.z = -centerZ
+
         return containerNode
     }
 

@@ -28,7 +28,13 @@ def _heading_y(transform_flat: list[float]) -> float:
 
 
 def _floor_y(transform_flat: list[float], detected_height: float, item_height: float | None) -> float:
-    """Y position so the *item's* bottom sits where the detected box's bottom sat."""
+    """Returns the *center* y so the matched item's bottom sits on the floor.
+
+    Convention: the iOS client's placed node has its pivot at the model's
+    rotated geometric center (see `BarebonesCapturedRoom.normalizedImportedNode`).
+    Setting `position.y = detected_floor + item_height / 2` therefore puts the
+    model centered at floor + h/2 — i.e. its bottom resting on the floor.
+    """
     if len(transform_flat) != 16:
         return 0.0
     detected_center_y = transform_flat[13]  # column 3, row 1
