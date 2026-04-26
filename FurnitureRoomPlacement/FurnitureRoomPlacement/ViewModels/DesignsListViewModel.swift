@@ -35,6 +35,7 @@ final class DesignsListViewModel: ObservableObject {
     @Published var isShowingImporter = false
     @Published var isShowingUnsupportedDeviceSheet = false
     @Published var isShowingStyleQuiz = false
+    @Published var isShowingScanMatching = false
 
     @Published var importMode: RoomImportMode = .barebones
     @Published var activeEditorSession: RoomEditorSession?
@@ -58,6 +59,12 @@ final class DesignsListViewModel: ObservableObject {
 
     var currentStyleQuizResult: StyleQuizResult {
         StyleQuizResult.fromUserDefaults()
+    }
+
+    func presentMatchingViewIfNeeded() {
+        if ScanResultHolder.shared.room != nil {
+            isShowingScanMatching = true
+        }
     }
 
     @MainActor

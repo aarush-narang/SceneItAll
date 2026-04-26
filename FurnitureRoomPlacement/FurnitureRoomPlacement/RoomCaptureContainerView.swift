@@ -12,6 +12,17 @@ import Combine
 import SceneKit
 import ARKit
 
+final class ScanResultHolder {
+    static let shared = ScanResultHolder()
+    var room: CapturedRoom?
+    var frames: [CapturedFrame] = []
+
+    func clear() {
+        room = nil
+        frames = []
+    }
+}
+
 struct RoomCaptureContainerView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = RoomCaptureModel()
@@ -25,35 +36,11 @@ struct RoomCaptureContainerView: View {
                     .ignoresSafeArea()
 
                 if model.isProcessing {
-                    ProgressView("Processing scan")
+                    ProgressView("Processing scan…")
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                         .background(.ultraThinMaterial, in: Capsule())
                         .padding(.bottom, 32)
-                } else if model.canExport {
-                    HStack {
-                        Button("Export Barebones Results") {
-                            model.exportBarebonesUSDZ()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .padding(.bottom, 32)
-
-                        Button("Export As-is Results") {
-                            model.exportResults()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .padding(.bottom, 32)
-
-                        Button("Match Furniture") {
-                            Task { await model.uploadAndMatch() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .tint(.green)
-                        .padding(.bottom, 32)
-                    }
                 }
             }
             .background(Color.black)
@@ -83,6 +70,9 @@ struct RoomCaptureContainerView: View {
         }
         .onDisappear {
             model.stopSessionIfNeeded()
+        }
+        .onChange(of: model.isScanComplete) { _, complete in
+            if complete { dismiss() }
         }
         .sheet(isPresented: $model.isShowingShareSheet) {
             if let exportURL = model.exportURL {
@@ -143,6 +133,7 @@ final class RoomCaptureModel: ObservableObject {
     @Published var isShowingError = false
     @Published var errorMessage = ""
     @Published var matchedScene: MatchedScene?
+    @Published var isScanComplete = false
 
     var exportURL: URL?
 
@@ -169,6 +160,7 @@ final class RoomCaptureModel: ObservableObject {
         canExport = false
         isProcessing = false
         matchedScene = nil
+        isScanComplete = false
 
         let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
         switch cameraStatus {
@@ -327,6 +319,9 @@ final class RoomCaptureModel: ObservableObject {
         finalResults = processedResult
         canExport = true
         isProcessing = false
+        ScanResultHolder.shared.room = processedResult
+        ScanResultHolder.shared.frames = frameSampler.snapshot()
+        isScanComplete = true
     }
 }
 

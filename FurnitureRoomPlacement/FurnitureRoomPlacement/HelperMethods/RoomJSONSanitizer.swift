@@ -57,17 +57,17 @@ final class RoomJSONSanitizer {
 
         let sanitizedOpenings =
             room.doors.enumerated().map { index, door in
-                sanitizedOpening(from: door, fallbackID: "door_\(index + 1)", wallIDMap: wallIDMap)
+                sanitizedOpening(from: door, kind: "door", fallbackID: "door_\(index + 1)", wallIDMap: wallIDMap)
             }
             + room.windows.enumerated().map { index, window in
-                sanitizedOpening(from: window, fallbackID: "window_\(index + 1)", wallIDMap: wallIDMap)
+                sanitizedOpening(from: window, kind: "window", fallbackID: "window_\(index + 1)", wallIDMap: wallIDMap)
             }
             + room.openings.enumerated().map { index, opening in
-                sanitizedOpening(from: opening, fallbackID: "opening_\(index + 1)", wallIDMap: wallIDMap)
+                sanitizedOpening(from: opening, kind: "opening", fallbackID: "opening_\(index + 1)", wallIDMap: wallIDMap)
             }
 
         let floor = room.floors.first
-        let roomType = room.sections.first?.label
+        let roomType = room.sections.first?.label ?? "unknown"
         let floorPolygon = floor.map(floorPolygon(from:)) ?? []
         let floorDimensions = floor.map { dimensions(for: $0) } ?? Dimensions(width: 0, height: 0, depth: 0)
         let ceilingHeight = sanitizedWalls.map(\.height).max() ?? 0
@@ -115,6 +115,7 @@ final class RoomJSONSanitizer {
 
     private static func sanitizedOpening(
         from surface: RawSurface,
+        kind: String,
         fallbackID: String,
         wallIDMap: [String: String]
     ) -> SanitizedOpening {
@@ -124,7 +125,7 @@ final class RoomJSONSanitizer {
 
         return SanitizedOpening(
             id: fallbackID,
-            type: surface.category.surfaceType.rawValue,
+            type: kind,
             wallID: surface.parentIdentifier.flatMap { wallIDMap[$0] },
             width: rounded(dimensions.width),
             height: rounded(dimensions.height),
@@ -447,7 +448,7 @@ struct SanitizedRoomPayload: Codable {
 
 struct SanitizedRoom: Codable {
     let id: String
-    let type: String?
+    let type: String
     let story: Int
     let boundingBox: SanitizedBoundingBox
     let floorPolygon: [[Double]]
