@@ -71,7 +71,7 @@ struct DesignsListView: View {
                         }
                     }
                 )
-                .presentationDetents([.height(340)])
+                .presentationDetents([.height(280)])
                 .presentationDragIndicator(.visible)
             }
             .fullScreenCover(isPresented: $viewModel.isShowingScan) {
@@ -300,22 +300,40 @@ private struct DesignCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(design.name)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .lineLimit(1)
+                    .padding(.leading, 10)
 
                 Text("\(design.roomType.capitalized) \u{00B7} \(design.furnitureCount) items")
-                    .font(.system(size: 12))
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
+                    .padding(.leading, 10)
 
-                Text(design.createdAt, style: .relative)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                HStack {
+                    Text("Created \(design.createdAt, style: .relative) ago")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+
+                    Image(systemName: "pencil")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .frame(width: 32, height: 32)
+                        .background(Color(.secondarySystemBackground), in: Circle())
+                }
+                .padding(.top, 2)
+                .padding(.leading, 10)
+                .padding(.trailing, 10)
+                .padding(.bottom, 4)
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 8)
+
         }
-        .padding(10)
         .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        )
         .shadow(color: .black.opacity(0.04), radius: 4, y: 1)
         .scaleEffect(isPressed ? 0.97 : 1)
         .animation(.spring(response: 0.25), value: isPressed)
@@ -352,13 +370,6 @@ private struct NewDesignSheet: View {
                     title: "Import Room Design",
                     subtitle: "Load a JSON room file with furniture",
                     action: onImportBarebones
-                )
-                NewDesignRow(
-                    icon: "scissors",
-                    iconColor: .orange,
-                    title: "Import & Strip Furniture",
-                    subtitle: "Load a JSON file, remove existing objects",
-                    action: onImportStripped
                 )
             }
             .padding(.horizontal, 20)

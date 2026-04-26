@@ -71,6 +71,37 @@ final class FurnitureAPIClient {
         )
     }
 
+    func createDesign(
+        name: String,
+        shell: SanitizedRoomPayload,
+        objects: [PlacedFurnitureObject] = [],
+        userID: String? = nil
+    ) async throws -> RemoteDesign {
+        let payload = DesignCreateRequest(
+            userID: userID ?? Self.defaultUserID(),
+            name: name,
+            shell: shell,
+            objects: objects
+        )
+        let url = baseURL.appending(path: "/designs")
+        return try await sendRequest(url: url, method: "POST", body: payload)
+    }
+
+    func createDesign(
+        name: String,
+        barebonesJSONData: Data,
+        objects: [PlacedFurnitureObject] = [],
+        userID: String? = nil
+    ) async throws -> RemoteDesign {
+        let shell = try RoomJSONSanitizer.sanitizedRoom(from: barebonesJSONData, objects: objects)
+        return try await createDesign(
+            name: name,
+            shell: shell,
+            objects: objects,
+            userID: userID
+        )
+    }
+
     func addObjectToDesign(
         _ object: PlacedFurnitureObject,
         designID: String? = nil,
@@ -338,6 +369,20 @@ struct DesignPatchRequest: Encodable {
     }
 }
 
+struct DesignCreateRequest: Encodable {
+    let userID: String
+    let name: String
+    let shell: SanitizedRoomPayload
+    let objects: [PlacedFurnitureObject]
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case name
+        case shell
+        case objects
+    }
+}
+
 struct AgentChatRequest: Encodable {
     let userID: String
     let designID: String
@@ -544,6 +589,79 @@ struct RemoteRoom: Decodable {
     let type: String
 }
 
+struct DesignValidationErrorResponse: Decodable {
+    let detail: [DesignValidationErrorItem]
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        detail = try container.decode([DesignValidationErrorItem].self, forKey: .detail)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case detail
+    }
+}
+
+struct DesignValidationErrorItem: Decodable {
+    let loc: [DesignValidationErrorLocation]
+    let msg: String
+    let type: String
+    let input: String?
+    let ctx: [String: String]?
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        loc = try container.decode([DesignValidationErrorLocation].self, forKey: .loc)
+        msg = try container.decode(String.self, forKey: .msg)
+        type = try container.decode(String.self, forKey: .type)
+        input = try container.decodeIfPresent(String.self, forKey: .input)
+        ctx = try container.decodeIfPresent([String: String].self, forKey: .ctx)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case loc
+        case msg
+        case type
+        case input
+        case ctx
+    }
+}
+
+enum DesignValidationErrorLocation: Decodable, CustomStringConvertible {
+    case string(String)
+    case int(Int)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let stringValue = try? container.decode(String.self) {
+            self = .string(stringValue)
+            return
+        }
+
+        if let intValue = try? container.decode(Int.self) {
+            self = .int(intValue)
+            return
+        }
+
+        throw DecodingError.typeMismatch(
+            DesignValidationErrorLocation.self,
+            DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Expected a string or integer validation error location."
+            )
+        )
+    }
+
+    var description: String {
+        switch self {
+        case .string(let value):
+            return value
+        case .int(let value):
+            return String(value)
+        }
+    }
+}
+
 extension FurnitureAPIClient {
     private func log(_ message: String) {
         print("[FurnitureAPIClient] \(message)")
@@ -595,24 +713,17 @@ extension FurnitureAPIClientError {
     }
     
     private static func validationErrorMessage(from data: Data) -> String? {
-        guard
-            let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let detail = jsonObject["detail"] as? [[String: Any]]
-        else {
+        guard let response = try? JSONDecoder().decode(DesignValidationErrorResponse.self, from: data) else {
             return nil
         }
 
-        let messages = detail.compactMap { entry -> String? in
-            let location = (entry["loc"] as? [Any])?
-                .map { String(describing: $0) }
-                .joined(separator: ".") ?? ""
-            let message = entry["msg"] as? String ?? ""
-
-            guard !message.isEmpty else {
+        let messages = response.detail.compactMap { entry -> String? in
+            guard !entry.msg.isEmpty else {
                 return nil
             }
 
-            return location.isEmpty ? message : "\(location): \(message)"
+            let location = entry.loc.map(\.description).joined(separator: ".")
+            return location.isEmpty ? entry.msg : "\(location): \(entry.msg)"
         }
 
         return messages.isEmpty ? nil : messages.joined(separator: "\n")
