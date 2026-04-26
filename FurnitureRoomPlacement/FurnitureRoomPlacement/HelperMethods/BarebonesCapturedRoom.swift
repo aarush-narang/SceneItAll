@@ -849,7 +849,7 @@ enum BarebonesRoomSceneBuilder {
 
     /// World Y of the floor's geometry in `rootNode`'s frame, by walking child
     /// nodes named `floor-*`. Returns nil if no floor nodes are present.
-    private static func floorY(in rootNode: SCNNode) -> Float? {
+    static func floorY(in rootNode: SCNNode) -> Float? {
         let floorNodes = rootNode.childNodes.filter {
             $0.name?.hasPrefix("floor-") == true
         }
