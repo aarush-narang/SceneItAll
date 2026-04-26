@@ -36,7 +36,7 @@ def decide(
         * Vector search returned zero candidates after the category/dim filter.
     Score and category-ambiguity bailouts are skipped while `ALWAYS_COMMIT` is
     True; the diagnostics are still recorded in the returned MatchDecision so
-    `match_decisions` logs stay informative."""
+    `scan.match` log line stays informative."""
     if not had_usable_embedding:
         return MatchDecision(None, "no_usable_embedding", 0.0, 0.0)
 
