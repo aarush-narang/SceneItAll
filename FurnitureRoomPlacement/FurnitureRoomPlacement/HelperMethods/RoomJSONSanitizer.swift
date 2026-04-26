@@ -133,18 +133,20 @@ final class RoomJSONSanitizer {
     }
 
     private static func floorPolygon(from surface: RawSurface) -> [[Double]] {
+        let center = translation(from: surface.transform)
+        let xAxis = normalizedXAxis(from: surface.transform)
+        let zAxis = normalizedZAxis(from: surface.transform)
         let corners = surface.polygonCorners
 
         if !corners.isEmpty {
             return corners.map { corner in
-                [rounded(corner.x), rounded(corner.z)]
+                let worldX = center[0] + (xAxis.x * corner.x) + (zAxis.x * corner.y)
+                let worldZ = center[2] + (xAxis.z * corner.x) + (zAxis.z * corner.y)
+                return [rounded(worldX), rounded(worldZ)]
             }
         }
 
         let dimensions = dimensions(for: surface)
-        let center = translation(from: surface.transform)
-        let xAxis = normalizedXAxis(from: surface.transform)
-        let zAxis = normalizedZAxis(from: surface.transform)
         let halfWidth = dimensions.width / 2
         let halfDepth = (dimensions.depth > 0 ? dimensions.depth : dimensions.height) / 2
 
@@ -424,7 +426,7 @@ struct SanitizedRoomPayload: Codable {
         room = try container.decode(SanitizedRoom.self, forKey: .room)
         walls = try container.decode([SanitizedWall].self, forKey: .walls)
         openings = try container.decode([SanitizedOpening].self, forKey: .openings)
-        objects = try container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects) ?? []
+        objects = (try? container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects)) ?? []
         metadata = try container.decode(SanitizedMetadata.self, forKey: .metadata)
     }
 }

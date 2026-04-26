@@ -39,21 +39,25 @@ private enum FurnitureInteractionMode {
 }
 
 struct OnboardingView: View {
-    private enum ImportMode {
-        case barebones
-        case stripFurniture
+    private struct ScanResult {
+        let scene: SCNScene
+        let roomData: Data
+        let capturedRoom: CapturedRoom
+        let capturedFrames: [CapturedFrame]
     }
 
     @State private var isShowingCaptureView = false
     @State private var isShowingUnsupportedDeviceSheet = false
     @State private var isShowingImporter = false
-    @State private var importMode: ImportMode = .barebones
     @State private var importedScene: SCNScene?
     @State private var importedRoomData: Data?
     @State private var importedPlacedObjects: [PlacedFurnitureObject] = []
     @State private var importedFileName = ""
     @State private var importErrorMessage = ""
     @State private var isShowingImportError = false
+    @State private var pendingScanResult: ScanResult?
+    @State private var scanCapturedRoom: CapturedRoom?
+    @State private var scanCapturedFrames: [CapturedFrame] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -84,16 +88,7 @@ struct OnboardingView: View {
                 .controlSize(.large)
                 .frame(maxWidth: .infinity, alignment: .center)
 
-                Button("Import Barebones JSON") {
-                    importMode = .barebones
-                    isShowingImporter = true
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-                Button("Import JSON & Strip Furnitures") {
-                    importMode = .stripFurniture
+                Button("Import Existing Design JSON") {
                     isShowingImporter = true
                 }
                 .buttonStyle(.bordered)
@@ -109,8 +104,10 @@ struct OnboardingView: View {
                 endPoint: .bottomTrailing
             )
         )
-        .fullScreenCover(isPresented: $isShowingCaptureView) {
-            RoomCaptureContainerView()
+        .fullScreenCover(isPresented: $isShowingCaptureView, onDismiss: handleScanDismiss) {
+            RoomCaptureContainerView { scene, data, room, frames in
+                pendingScanResult = ScanResult(scene: scene, roomData: data, capturedRoom: room, capturedFrames: frames)
+            }
         }
         .sheet(isPresented: $isShowingUnsupportedDeviceSheet) {
             NavigationStack {
@@ -132,7 +129,9 @@ struct OnboardingView: View {
                 scene: scene,
                 title: importedFileName,
                 baseRoomData: importedRoomData ?? Data(),
-                initialPlacedObjects: importedPlacedObjects
+                initialPlacedObjects: importedPlacedObjects,
+                capturedRoom: scanCapturedRoom,
+                capturedFrames: scanCapturedFrames
             )
         }
         .fileImporter(
@@ -161,26 +160,42 @@ struct OnboardingView: View {
 
             let data = try Data(contentsOf: fileURL)
             let scene: SCNScene
+            let roomData: Data
+            let objects: [PlacedFurnitureObject]
 
-            switch importMode {
-            case .barebones:
+            if let payload = try? JSONDecoder().decode(SanitizedRoomPayload.self, from: data) {
+                scene = BarebonesRoomSceneBuilder.scene(for: payload)
+                roomData = data
+                objects = payload.objects
+            } else {
                 let normalizedData = try BarebonesRoomJSONSanitizer.normalizedRoomData(from: data)
                 scene = try BarebonesRoomImportLoader.loadScene(from: normalizedData)
-                importedRoomData = normalizedData
-                importedPlacedObjects = try BarebonesRoomImportLoader.loadPlacedObjects(from: normalizedData)
-            case .stripFurniture:
-                let strippedData = try BarebonesRoomJSONSanitizer.stripToEssentialSurfaces(from: data)
-                scene = try BarebonesRoomImportLoader.loadScene(from: strippedData)
-                importedRoomData = strippedData
-                importedPlacedObjects = []
+                roomData = normalizedData
+                objects = (try? BarebonesRoomImportLoader.loadPlacedObjects(from: normalizedData)) ?? []
             }
 
+            scanCapturedRoom = nil
+            scanCapturedFrames = []
+            importedRoomData = roomData
+            importedPlacedObjects = objects
             importedFileName = fileURL.deletingPathExtension().lastPathComponent
             importedScene = scene
         } catch {
             importErrorMessage = error.localizedDescription
             isShowingImportError = true
         }
+    }
+
+    private func handleScanDismiss() {
+        guard let result = pendingScanResult else { return }
+        pendingScanResult = nil
+
+        scanCapturedRoom = result.capturedRoom
+        scanCapturedFrames = result.capturedFrames
+        importedRoomData = result.roomData
+        importedPlacedObjects = []
+        importedFileName = "Scanned Room"
+        importedScene = result.scene
     }
 }
 
@@ -202,7 +217,7 @@ struct UnsupportedDeviceView: View {
     }
 }
 
-private struct ImportedRoomShellView: View {
+struct ImportedRoomShellView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var isShowingOverlayError = false
     @State private var hasOverlayedExternalUSDZ = false
@@ -223,22 +238,32 @@ private struct ImportedRoomShellView: View {
             text: "Ask about the current room layout. The latest sanitized JSON will be prepared when you send."
         )
     ]
+    @State private var isMatchingFurniture = false
+    @State private var matchingStatus = ""
+    @State private var showMatchingFailure = false
+    @State private var matchingErrorMessage = ""
 
     let scene: SCNScene
     let title: String
     let baseRoomData: Data
     let initialPlacedObjects: [PlacedFurnitureObject]
+    let capturedRoom: CapturedRoom?
+    let capturedFrames: [CapturedFrame]
 
     init(
         scene: SCNScene,
         title: String,
         baseRoomData: Data,
-        initialPlacedObjects: [PlacedFurnitureObject]
+        initialPlacedObjects: [PlacedFurnitureObject],
+        capturedRoom: CapturedRoom? = nil,
+        capturedFrames: [CapturedFrame] = []
     ) {
         self.scene = scene
         self.title = title
         self.baseRoomData = baseRoomData
         self.initialPlacedObjects = initialPlacedObjects
+        self.capturedRoom = capturedRoom
+        self.capturedFrames = capturedFrames
         _placedObjects = State(initialValue: initialPlacedObjects)
         _hasOverlayedExternalUSDZ = State(initialValue: !initialPlacedObjects.isEmpty)
     }
@@ -252,6 +277,23 @@ private struct ImportedRoomShellView: View {
                 )
                 .background(Color(white: 0.72))
                 .ignoresSafeArea()
+
+                if isMatchingFurniture {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(matchingStatus)
+                                .font(.subheadline)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 32)
+                }
 
                 ImportedRoomAssistantOverlay(
                     isPresented: $isShowingAssistant,
@@ -310,6 +352,14 @@ private struct ImportedRoomShellView: View {
             } message: {
                 Text(exportErrorMessage)
             }
+            .alert("Furniture Matching Failed", isPresented: $showMatchingFailure) {
+                Button("Retry") {
+                    Task { await matchFurniture() }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text(matchingErrorMessage)
+            }
             .onChange(of: hasOverlayedExternalUSDZ) { _, hasOverlay in
                 if !hasOverlay {
                     furnitureInteractionMode = .view
@@ -317,6 +367,9 @@ private struct ImportedRoomShellView: View {
             }
             .task {
                 await restoreSavedFurnitureIfNeeded()
+                if capturedRoom != nil {
+                    await matchFurniture()
+                }
             }
             .fileExporter(
                 isPresented: $isShowingSaveExporter,
@@ -407,16 +460,32 @@ private struct ImportedRoomShellView: View {
     private func saveRoomJSON() {
         do {
             let updatedObjects = placedObjects.map(currentPlacement(for:))
-            let updatedData = try RoomJSONSanitizer.sanitizedJSONData(
-                from: baseRoomData,
-                appending: updatedObjects
-            )
+            let updatedData = try exportableJSONData(with: updatedObjects)
             exportDocument = JSONExportDocument(data: updatedData)
             isShowingSaveExporter = true
         } catch {
             exportErrorMessage = error.localizedDescription
             isShowingExportError = true
         }
+    }
+
+    private func exportableJSONData(with objects: [PlacedFurnitureObject]) throws -> Data {
+        if let payload = try? JSONDecoder().decode(SanitizedRoomPayload.self, from: baseRoomData) {
+            let updated = SanitizedRoomPayload(
+                schemaVersion: payload.schemaVersion,
+                units: payload.units,
+                room: payload.room,
+                walls: payload.walls,
+                openings: payload.openings,
+                objects: objects,
+                metadata: SanitizedMetadata(
+                    sourceVersion: payload.metadata.sourceVersion,
+                    generatedAt: ISO8601DateFormatter().string(from: Date())
+                )
+            )
+            return try RoomJSONSanitizer.sanitizedJSONData(from: updated)
+        }
+        return try RoomJSONSanitizer.sanitizedJSONData(from: baseRoomData, appending: objects)
     }
 
     private func handleAssistantSend() {
@@ -455,10 +524,7 @@ private struct ImportedRoomShellView: View {
 
     private func makeAssistantRequest(prompt: String) throws -> ImportedRoomAssistantRequest {
         let updatedObjects = placedObjects.map(currentPlacement(for:))
-        let sanitizedData = try RoomJSONSanitizer.sanitizedJSONData(
-            from: baseRoomData,
-            appending: updatedObjects
-        )
+        let sanitizedData = try exportableJSONData(with: updatedObjects)
         let sanitizedJSONString = String(decoding: sanitizedData, as: UTF8.self)
 
         return ImportedRoomAssistantRequest(
@@ -525,6 +591,170 @@ private struct ImportedRoomShellView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Furniture Matching
+
+    private func matchFurniture() async {
+        guard let capturedRoom, !capturedFrames.isEmpty else { return }
+
+        isMatchingFurniture = true
+        matchingStatus = "Matching furniture…"
+
+        let uploadClient = ScanUploadClient(
+            baseURL: URL(string: "https://poison-groundwater-states-excess.trycloudflare.com")!
+        )
+
+        let matchedScene: MatchedScene
+        do {
+            matchedScene = try await uploadClient.upload(
+                room: capturedRoom,
+                frames: capturedFrames
+            )
+        } catch {
+            isMatchingFurniture = false
+            matchingErrorMessage = error.localizedDescription
+            showMatchingFailure = true
+            return
+        }
+
+        let total = matchedScene.objects.count
+        var loaded = 0
+
+        for obj in matchedScene.objects {
+            if obj.isMatched, let urlString = obj.matchedUSDZURL, let url = URL(string: urlString) {
+                matchingStatus = "Loading \(obj.matchedProductName ?? obj.refinedCategory)… (\(loaded + 1)/\(total))"
+
+                do {
+                    let localURL = try await RemoteUSDZCache.shared.localFileURL(for: url)
+                    let didAdd = BarebonesRoomSceneBuilder.overlayExternalUSDZ(
+                        on: scene,
+                        fileURL: localURL,
+                        overlayIdentifier: obj.detectedId
+                    )
+                    if didAdd {
+                        let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: obj.detectedId)
+                        if let node = scene.rootNode.childNode(withName: nodeName, recursively: true) {
+                            applyMatchedTransform(obj.transform, to: node)
+                        }
+                        hasOverlayedExternalUSDZ = true
+                    }
+                    if let placed = makePlacedObject(from: obj) {
+                        placedObjects.append(placed)
+                    }
+                } catch {
+                    print("Failed to load USDZ for \(obj.detectedId): \(error)")
+                    addPlaceholderBox(for: obj)
+                }
+            } else {
+                addPlaceholderBox(for: obj)
+            }
+
+            loaded += 1
+        }
+
+        isMatchingFurniture = false
+    }
+
+    private func applyMatchedTransform(_ t: ObjectTransform, to node: SCNNode) {
+        node.position = SCNVector3(
+            t.position.count > 0 ? t.position[0] : 0,
+            t.position.count > 1 ? t.position[1] : 0,
+            t.position.count > 2 ? t.position[2] : 0
+        )
+        node.eulerAngles = SCNVector3(
+            t.rotationEuler.count > 0 ? t.rotationEuler[0] : 0,
+            t.rotationEuler.count > 1 ? t.rotationEuler[1] : 0,
+            t.rotationEuler.count > 2 ? t.rotationEuler[2] : 0
+        )
+        if t.scale.count >= 3 {
+            node.scale = SCNVector3(t.scale[0], t.scale[1], t.scale[2])
+        }
+    }
+
+    private func addPlaceholderBox(for obj: MatchedObject) {
+        let dims = obj.originalBBox.dimensions
+        guard dims.count >= 3 else { return }
+        let w = CGFloat(dims[0])
+        let h = CGFloat(dims[1])
+        let d = CGFloat(dims[2])
+
+        let box = SCNBox(width: w, height: h, length: d, chamferRadius: 0)
+        let material = SCNMaterial()
+        material.diffuse.contents = UIColor.systemBlue.withAlphaComponent(0.15)
+        material.isDoubleSided = true
+        material.fillMode = .fill
+        box.materials = [material]
+
+        let boxNode = SCNNode(geometry: box)
+
+        let wireframe = SCNBox(width: w, height: h, length: d, chamferRadius: 0)
+        let wireMaterial = SCNMaterial()
+        wireMaterial.diffuse.contents = UIColor.white
+        wireMaterial.fillMode = .lines
+        wireMaterial.isDoubleSided = true
+        wireframe.materials = [wireMaterial]
+        let wireNode = SCNNode(geometry: wireframe)
+        boxNode.addChildNode(wireNode)
+
+        let text = SCNText(string: obj.refinedCategory, extrusionDepth: 0.005)
+        text.font = UIFont.systemFont(ofSize: 0.08, weight: .semibold)
+        text.firstMaterial?.diffuse.contents = UIColor.white
+        text.firstMaterial?.isDoubleSided = true
+        text.flatness = 0.3
+        let textNode = SCNNode(geometry: text)
+        let (textMin, textMax) = textNode.boundingBox
+        let textWidth = textMax.x - textMin.x
+        textNode.position = SCNVector3(-textWidth / 2, Float(h) / 2 + 0.05, 0)
+        boxNode.addChildNode(textNode)
+
+        let containerNode = SCNNode()
+        containerNode.addChildNode(boxNode)
+        containerNode.name = "whitebox-\(obj.detectedId)"
+
+        let t = obj.transform
+        containerNode.position = SCNVector3(
+            t.position.count > 0 ? t.position[0] : 0,
+            (t.position.count > 1 ? t.position[1] : 0) + Float(h) / 2,
+            t.position.count > 2 ? t.position[2] : 0
+        )
+        if t.rotationEuler.count >= 2 {
+            containerNode.eulerAngles.y = t.rotationEuler[1]
+        }
+
+        containerNode.renderingOrder = 900
+        scene.rootNode.addChildNode(containerNode)
+    }
+
+    private func makePlacedObject(from obj: MatchedObject) -> PlacedFurnitureObject? {
+        guard obj.isMatched,
+              let productId = obj.matchedProductId,
+              let productName = obj.matchedProductName,
+              let usdzURL = obj.matchedUSDZURL else { return nil }
+
+        let dims = obj.originalBBox.dimensions
+        let snapshot = SavedFurnitureSnapshot(
+            id: productId,
+            name: productName,
+            familyKey: productId,
+            dimensionsBbox: DimensionsBbox(
+                widthM: Double(dims.count > 0 ? dims[0] : 0),
+                heightM: Double(dims.count > 1 ? dims[1] : 0),
+                depthM: Double(dims.count > 2 ? dims[2] : 0)
+            ),
+            files: SavedFurnitureFiles(usdzURL: usdzURL)
+        )
+
+        return PlacedFurnitureObject(
+            id: obj.detectedId,
+            furniture: Furniture(savedSnapshot: snapshot),
+            placement: FurniturePlacement(
+                position: obj.transform.position,
+                eulerAngles: obj.transform.rotationEuler,
+                scale: obj.transform.scale
+            ),
+            addedAt: ISO8601DateFormatter().string(from: Date())
+        )
     }
 }
 

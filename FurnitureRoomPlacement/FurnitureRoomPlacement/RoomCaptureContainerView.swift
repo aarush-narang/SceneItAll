@@ -1,5 +1,5 @@
 /*
-See the LICENSE.txt file for this sample’s licensing information.
+See the LICENSE.txt file for this sample's licensing information.
 
 Abstract:
 SwiftUI room capture flow backed by RoomCaptureView.
@@ -15,6 +15,7 @@ import ARKit
 struct RoomCaptureContainerView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = RoomCaptureModel()
+    let onScanComplete: (SCNScene, Data, CapturedRoom, [CapturedFrame]) -> Void
 
     var body: some View {
         NavigationStack {
@@ -28,30 +29,6 @@ struct RoomCaptureContainerView: View {
                         .padding(.vertical, 12)
                         .background(.ultraThinMaterial, in: Capsule())
                         .padding(.bottom, 32)
-                } else if model.canExport {
-                    HStack {
-                        Button("Export Barebones Results") {
-                            model.exportBarebonesUSDZ()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .padding(.bottom, 32)
-
-                        Button("Export As-is Results") {
-                            model.exportResults()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .padding(.bottom, 32)
-
-                        Button("Match Furniture") {
-                            Task { await model.uploadAndMatch() }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .tint(.green)
-                        .padding(.bottom, 32)
-                    }
                 }
             }
             .background(Color.black)
@@ -59,17 +36,15 @@ struct RoomCaptureContainerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(model.isScanning ? "Cancel" : "Close") {
+                    Button("Cancel") {
                         dismiss()
                     }
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(model.isScanning ? "Done" : "Close") {
-                        if model.isScanning {
+                    if model.isScanning {
+                        Button("Done") {
                             model.stopSession()
-                        } else {
-                            dismiss()
                         }
                     }
                 }
@@ -82,15 +57,16 @@ struct RoomCaptureContainerView: View {
         .onDisappear {
             model.stopSessionIfNeeded()
         }
-        .sheet(isPresented: $model.isShowingShareSheet) {
-            if let exportURL = model.exportURL {
-                ShareSheet(activityItems: [exportURL])
-            }
-        }
-        .alert("Export Failed", isPresented: $model.isShowingError) {
+        .alert("Error", isPresented: $model.isShowingError) {
             Button("OK", role: .cancel) { }
         } message: {
             Text(model.errorMessage)
+        }
+        .onChange(of: model.scanComplete) { _, complete in
+            if complete, let scene = model.barebonesScene, let room = model.finalResults {
+                onScanComplete(scene, model.barebonesRoomData ?? Data(), room, model.capturedFrames)
+                dismiss()
+            }
         }
     }
 }
@@ -122,36 +98,22 @@ struct RoomCaptureViewRepresentable: UIViewRepresentable {
     }
 }
 
-struct ShareSheet: UIViewControllerRepresentable {
-    let activityItems: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) { }
-}
-
 @MainActor
 final class RoomCaptureModel: ObservableObject {
     @Published var isScanning = false
     @Published var isProcessing = false
-    @Published var canExport = false
-    @Published var isShowingShareSheet = false
     @Published var isShowingError = false
     @Published var errorMessage = ""
-    @Published var matchedScene: MatchedScene?
-
-    var exportURL: URL?
+    @Published var scanComplete = false
 
     let frameSampler = FrameSampler()
-    private let uploadClient = ScanUploadClient(
-        baseURL: URL(string: "http://10.30.77.23:8000")!
-    )
+    private(set) var finalResults: CapturedRoom?
+    private(set) var capturedFrames: [CapturedFrame] = []
+    private(set) var barebonesScene: SCNScene?
+    private(set) var barebonesRoomData: Data?
 
     private weak var roomCaptureView: RoomCaptureView?
     private let roomCaptureSessionConfig = RoomCaptureSession.Configuration()
-    private var finalResults: CapturedRoom?
 
     func attach(to roomCaptureView: RoomCaptureView) {
         self.roomCaptureView = roomCaptureView
@@ -160,9 +122,11 @@ final class RoomCaptureModel: ObservableObject {
     func startSession() {
         guard let roomCaptureView, !isScanning else { return }
         finalResults = nil
-        canExport = false
+        capturedFrames = []
+        barebonesScene = nil
+        barebonesRoomData = nil
         isProcessing = false
-        matchedScene = nil
+        scanComplete = false
         isScanning = true
         roomCaptureView.captureSession.run(configuration: roomCaptureSessionConfig)
 
@@ -175,7 +139,6 @@ final class RoomCaptureModel: ObservableObject {
     func stopSession() {
         guard let roomCaptureView, isScanning else { return }
         isScanning = false
-        canExport = false
         isProcessing = true
         roomCaptureView.captureSession.stop()
     }
@@ -187,116 +150,47 @@ final class RoomCaptureModel: ObservableObject {
         isProcessing = false
     }
 
-    func exportResults() {
-        guard let finalResults else { return }
-
-        let destinationFolderURL = FileManager.default.temporaryDirectory.appending(path: "Export")
-        let destinationURL = destinationFolderURL.appending(path: "Room.usdz")
-        let capturedRoomURL = destinationFolderURL.appending(path: "Room.json")
-
-        do {
-            try FileManager.default.createDirectory(at: destinationFolderURL, withIntermediateDirectories: true)
-            let jsonData = try JSONEncoder().encode(finalResults)
-            try jsonData.write(to: capturedRoomURL)
-            try finalResults.export(to: destinationURL, exportOptions: .mesh)
-            exportURL = destinationFolderURL
-            isShowingShareSheet = true
-        } catch {
-            errorMessage = error.localizedDescription
-            isShowingError = true
-        }
-    }
-
-    func exportBarebonesUSDZ() {
-        guard let finalResults else { return }
-
-        let destinationFolderURL = FileManager.default.temporaryDirectory.appending(path: "BarebonesUSDZExport")
-        let usdzURL = destinationFolderURL.appending(path: "RoomShell.usdz")
-        let jsonURL = destinationFolderURL.appending(path: "BarebonesRoom.json")
-
-        do {
-            try FileManager.default.createDirectory(at: destinationFolderURL, withIntermediateDirectories: true)
-            try exportBarebonesJSON(for: finalResults, to: jsonURL)
-
-            let scene = BarebonesRoomSceneBuilder.scene(for: finalResults)
-            let didWriteScene = scene.write(to: usdzURL, options: nil, delegate: nil, progressHandler: nil)
-
-            guard didWriteScene else {
-                throw BarebonesExportError.usdzExportFailed
-            }
-
-            exportURL = destinationFolderURL
-            isShowingShareSheet = true
-        } catch {
-            errorMessage = error.localizedDescription
-            isShowingError = true
-        }
-    }
-
-    private func exportBarebonesJSON(for finalResults: CapturedRoom, to url: URL) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let jsonData: Data
-
-        if #available(iOS 17.0, *) {
-            let barebonesRoom = BarebonesCapturedRoom(
-                identifier: finalResults.identifier,
-                story: finalResults.story,
-                version: finalResults.version,
-                walls: finalResults.walls,
-                doors: finalResults.doors,
-                windows: finalResults.windows,
-                openings: finalResults.openings,
-                floors: finalResults.floors,
-                sections: finalResults.sections
-            )
-            jsonData = try encoder.encode(barebonesRoom)
-        } else {
-            let legacyBarebonesRoom = LegacyBarebonesCapturedRoom(
-                identifier: finalResults.identifier,
-                walls: finalResults.walls,
-                doors: finalResults.doors,
-                windows: finalResults.windows,
-                openings: finalResults.openings
-            )
-            jsonData = try encoder.encode(legacyBarebonesRoom)
-        }
-
-        try jsonData.write(to: url)
-    }
-
-    func uploadAndMatch() async {
-        guard let finalResults else { return }
-        isProcessing = true
-        defer { isProcessing = false }
-        do {
-            let scene = try await uploadClient.upload(
-                room: finalResults,
-                frames: frameSampler.snapshot()
-            )
-            matchedScene = scene
-            let matched = scene.objects.filter { $0.isMatched }.count
-            let whitebox = scene.objects.filter { !$0.isMatched }.count
-            print("matched \(scene.objects.count) objects (\(matched) real, \(whitebox) white-box):")
-            for obj in scene.objects {
-                let target: String
-                if let pid = obj.matchedProductId {
-                    target = "\(pid) (\(obj.matchedProductName ?? "?"))"
-                } else {
-                    target = "WHITE_BOX"
-                }
-                print("  • \(obj.detectedId) [\(obj.refinedCategory)] → \(target)")
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-            isShowingError = true
-        }
-    }
-
     func handleProcessedResult(_ processedResult: CapturedRoom) {
         finalResults = processedResult
-        canExport = true
+        capturedFrames = frameSampler.snapshot()
+        barebonesScene = BarebonesRoomSceneBuilder.scene(for: processedResult)
+        barebonesRoomData = generateBarebonesJSON(for: processedResult)
         isProcessing = false
+        scanComplete = true
+    }
+
+    private func generateBarebonesJSON(for room: CapturedRoom) -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        do {
+            if #available(iOS 17.0, *) {
+                let barebonesRoom = BarebonesCapturedRoom(
+                    identifier: room.identifier,
+                    story: room.story,
+                    version: room.version,
+                    walls: room.walls,
+                    doors: room.doors,
+                    windows: room.windows,
+                    openings: room.openings,
+                    floors: room.floors,
+                    sections: room.sections
+                )
+                return try encoder.encode(barebonesRoom)
+            } else {
+                let legacyRoom = LegacyBarebonesCapturedRoom(
+                    identifier: room.identifier,
+                    walls: room.walls,
+                    doors: room.doors,
+                    windows: room.windows,
+                    openings: room.openings
+                )
+                return try encoder.encode(legacyRoom)
+            }
+        } catch {
+            print("Failed to generate barebones JSON: \(error)")
+            return nil
+        }
     }
 }
 
