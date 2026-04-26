@@ -41,11 +41,22 @@ in the text shown to the user.
 """
 
 
+_AXES = """\
+COORDINATE SYSTEM (y-up, right-handed, room-local meters — RoomPlan/ARKit convention):
+- y is the VERTICAL axis. Up is +y, down is -y. The floor sits at y = floor_y (shown in the room digest below); the ceiling sits at y = floor_y + ceiling_height. Nothing about a room's height varies along x or z.
+- x and z are the two HORIZONTAL axes that lie on the floor plane. Floor polygons are 2D (x, z) point lists at floor height. "Across the room" / "along the wall" / "toward the door" all live on the xz plane.
+- Each item's `dimensions_bbox` maps width_m -> x-extent, height_m -> y-extent (vertical, top minus base), depth_m -> z-extent. So an item's vertical size is height_m, and its footprint on the floor is width_m by depth_m.
+- An item's `position` is the CENTER of its xz footprint and the BASE (bottom) of its vertical extent. So position.y is where the item rests, not its midpoint. The top of the item is at position.y + dimensions_bbox.height_m.
+- yaw (the second euler angle) is rotation about the +y axis — i.e. spinning the item in place on the floor. pitch (first) and roll (third) tilt it off vertical and must stay near 0.
+"""
+
+
 _HARD_RULES = """\
 HARD RULES (the placement validator enforces these — your call will be rejected if you violate them):
 - Items must be upright (pitch and roll within ~15° of zero); only yaw may differ.
-- Item base y must be at the floor level; item top must fit under the ceiling.
-- Item footprint (width × depth, accounting for yaw) must lie entirely inside the room's floor polygon.
+- Item base y MUST equal the room's floor_y (shown in the room digest). Setting position.y = 0 when the room's floor_y is non-zero will leave the item floating in mid-air — always copy floor_y from the digest into position.y.
+- Item top (position.y + dimensions_bbox.height_m) must fit under the ceiling (floor_y + ceiling_height).
+- Item footprint (width_m by depth_m, accounting for yaw) must lie entirely inside the room's floor polygon.
 - Items may not overlap other placed items (axis-aligned bounding-box collision on the xz plane plus a y-interval check).
 - Items may not block the inward 1m clearance zone in front of any door or open passageway.
 
@@ -105,15 +116,22 @@ def _format_prefs(prefs: dict[str, Any] | None) -> str:
 
 
 def _format_room_digest(design: dict[str, Any]) -> str:
+    from ...utils.geometry import derive_floor_y
+
     shell = design["shell"]
     room = shell["room"]
     walls = shell.get("walls") or []
     openings = shell.get("openings") or []
     placed = design.get("objects") or []
+    floor_y = derive_floor_y(walls)
+    ceiling_y = floor_y + room["ceiling_height"]
 
     lines: list[str] = ["ROOM DIGEST"]
     lines.append(
-        f"Type: {room.get('type', 'unknown')}; ceiling_height={room['ceiling_height']:.2f}m; "
+        f"Type: {room.get('type', 'unknown')}; "
+        f"floor_y={floor_y:.3f}m  <-- copy this into every place_item/move_item position.y; "
+        f"ceiling_y={ceiling_y:.3f}m; "
+        f"ceiling_height={room['ceiling_height']:.2f}m; "
         f"bbox={room.get('bounding_box', {})}"
     )
 
@@ -167,6 +185,7 @@ def build_system_instruction(
 ) -> str:
     return "\n".join([
         _AGENT_RUBRIC,
+        _AXES,
         _HARD_RULES,
         _format_prefs(prefs),
         _format_room_digest(design),
