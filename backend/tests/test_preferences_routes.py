@@ -22,12 +22,18 @@ def preference_payload() -> dict:
 
 def test_get_preferences_route():
     """GET /preferences/{user_id}"""
+    user_id = str(uuid4())
+    payload = preference_payload()
+
     with TestClient(app) as client:
-        response = client.get(f"/preferences/{EXISTING_USER_ID}")
+        # First create a preference
+        client.put(f"/preferences/{user_id}", json=payload)
+        # Then retrieve it
+        response = client.get(f"/preferences/{user_id}")
 
     assert response.status_code == 200
     data = response.json()
-    assert data["user_id"] == EXISTING_USER_ID
+    assert data["user_id"] == user_id
     assert isinstance(data["id"], str)
     assert isinstance(data["style_tags"], list)
     assert isinstance(data["color_palette"], list)
