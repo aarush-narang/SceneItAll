@@ -23,13 +23,23 @@ class PlaceItemInput(BaseModel):
         description="Furniture item id (from search_catalog results)."
     )
     position: tuple[float, float, float] = Field(
-        description="Placement (x, y, z) in meters, room-local. y is the item's base."
+        description=(
+            "Placement (x, y, z) in meters, room-local. y is VERTICAL (up axis); "
+            "x and z are HORIZONTAL (the floor plane). The position is the "
+            "center of the item's xz footprint and the BASE (bottom) of its "
+            "vertical extent — so position.y is where the item rests on the "
+            "floor. Set position.y = the room's floor_y from the room digest "
+            "(NOT 0, unless floor_y is 0). The item's top is then at "
+            "position.y + dimensions_bbox.height_m."
+        )
     )
     euler_angles: tuple[float, float, float] = Field(
         default=(0.0, 0.0, 0.0),
         description=(
-            "Rotation as (pitch, yaw, roll) in radians. Pitch and roll must be "
-            "near 0 (item upright); only yaw should differ."
+            "Rotation as (pitch, yaw, roll) in radians. yaw is rotation about "
+            "the +y (vertical) axis — spinning the item in place on the floor. "
+            "pitch and roll must be near 0 so the item stays upright; only yaw "
+            "should differ."
         ),
     )
     rationale: str = Field(

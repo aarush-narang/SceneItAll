@@ -72,13 +72,14 @@ class Wall(BaseModel):
 
 class Opening(BaseModel):
     """A door, window, or open passageway. `bottom_height` is the sill height
-    above the floor; `is_open` is only set on doors."""
+    above the floor; `is_open` is only set on doors. `wall_id` is null when
+    RoomPlan emits an opening that doesn't bind to a captured wall."""
 
     model_config = ConfigDict(populate_by_name=True)
 
     id: str
     type: Literal["door", "window", "opening"]
-    wall_id: str = Field(alias="wallID")
+    wall_id: str | None = Field(default=None, alias="wallID")
     center: Vec3
     width: float
     height: float

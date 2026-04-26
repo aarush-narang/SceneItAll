@@ -16,6 +16,7 @@ Supporting barebones room models, import/export helpers, and SceneKit builders.
 import Foundation
 import RoomPlan
 import SceneKit
+import simd
 import UIKit
 
 struct SavedFurnitureSnapshot: Codable {
@@ -285,6 +286,19 @@ enum BarebonesRoomSceneBuilder {
         return scene
     }
 
+    static func scene(for room: SanitizedRoomPayload) -> SCNScene {
+        let scene = SCNScene()
+        scene.background.contents = UIColor(white: 0.6, alpha: 1.0)
+        let rootNode = scene.rootNode
+
+        addSanitizedFloor(from: room, to: rootNode)
+        addSanitizedWalls(room.walls, to: rootNode)
+        addSanitizedOpenings(room.openings, to: rootNode)
+        addCameraAndLights(to: rootNode)
+
+        return scene
+    }
+
     @discardableResult
     static func overlayExternalUSDZ(
         on scene: SCNScene,
@@ -336,6 +350,230 @@ enum BarebonesRoomSceneBuilder {
         }
     }
 
+    private static func addSanitizedWalls(_ walls: [SanitizedWall], to rootNode: SCNNode) {
+        for wall in walls {
+            addSanitizedPlane(
+                identifier: wall.id,
+                kind: .wall,
+                width: wall.width,
+                height: wall.height,
+                center: wall.center,
+                rotationRadians: wall.rotationRadians,
+                to: rootNode
+            )
+        }
+    }
+
+    private static func addSanitizedOpenings(_ openings: [SanitizedOpening], to rootNode: SCNNode) {
+        for opening in openings {
+            addSanitizedPlane(
+                identifier: opening.id,
+                kind: sanitizedSurfaceKind(for: opening.type),
+                width: opening.width,
+                height: opening.height,
+                center: opening.center,
+                rotationRadians: opening.rotationRadians,
+                to: rootNode
+            )
+        }
+    }
+
+    private static func addSanitizedFloor(from payload: SanitizedRoomPayload, to rootNode: SCNNode) {
+        let floorNode = SCNNode()
+        floorNode.name = "\(SurfaceKind.floor.nodeName)-\(payload.room.id)"
+        floorNode.position.y = floorElevation(from: payload)
+
+        if let geometry = makeSanitizedFloorGeometry(from: payload) {
+            let geometryNode = SCNNode(geometry: geometry)
+            geometryNode.position.y += surfaceDepthOffset(for: .floor)
+            geometryNode.renderingOrder = renderingOrder(for: .floor)
+            floorNode.addChildNode(geometryNode)
+        }
+
+        if let outlineNode = makeSanitizedFloorOutlineNode(from: payload) {
+            floorNode.addChildNode(outlineNode)
+        }
+
+        rootNode.addChildNode(floorNode)
+    }
+
+    private static func floorElevation(from payload: SanitizedRoomPayload) -> Float {
+        let wallBottoms = payload.walls.compactMap { wall -> Double? in
+            guard wall.center.count >= 2 else { return nil }
+            return wall.center[1] - (wall.height / 2)
+        }
+
+        guard let lowestWallBottom = wallBottoms.min() else {
+            return 0
+        }
+
+        return Float(lowestWallBottom)
+    }
+
+    private static func addSanitizedPlane(
+        identifier: String,
+        kind: SurfaceKind,
+        width: Double,
+        height: Double,
+        center: [Double],
+        rotationRadians: Double,
+        to rootNode: SCNNode
+    ) {
+        let surfaceNode = SCNNode()
+        surfaceNode.name = "\(kind.nodeName)-\(identifier)"
+        surfaceNode.position = SCNVector3(
+            center.count > 0 ? center[0] : 0,
+            center.count > 1 ? center[1] : 0,
+            center.count > 2 ? center[2] : 0
+        )
+        surfaceNode.eulerAngles.y = Float(rotationRadians)
+
+        let plane = SCNPlane(
+            width: CGFloat(max(width, 0.01)),
+            height: CGFloat(max(height, 0.01))
+        )
+        plane.materials = [kind.material]
+
+        let geometryNode = SCNNode(geometry: plane)
+        geometryNode.position.z += surfaceDepthOffset(for: kind)
+        geometryNode.renderingOrder = renderingOrder(for: kind)
+        surfaceNode.addChildNode(geometryNode)
+
+        let halfWidth = Float(max(width, 0.01) / 2)
+        let halfHeight = Float(max(height, 0.01) / 2)
+        let outlineVertices = [
+            SCNVector3(-halfWidth, -halfHeight, 0),
+            SCNVector3(halfWidth, -halfHeight, 0),
+            SCNVector3(halfWidth, halfHeight, 0),
+            SCNVector3(-halfWidth, halfHeight, 0)
+        ]
+        if let outlineNode = makeOutlineNode(from: outlineVertices, kind: kind) {
+            surfaceNode.addChildNode(outlineNode)
+        }
+
+        rootNode.addChildNode(surfaceNode)
+    }
+
+    private static func makeSanitizedFloorGeometry(from payload: SanitizedRoomPayload) -> SCNGeometry? {
+        let polygon = sanitizedFloorVertices(from: payload)
+        guard polygon.count >= 3 else { return nil }
+        return polygonGeometry(from: polygon, kind: .floor)
+    }
+
+    private static func makeSanitizedFloorOutlineNode(from payload: SanitizedRoomPayload) -> SCNNode? {
+        let vertices = sanitizedFloorVertices(from: payload).map { SCNVector3($0.x, $0.y, $0.z) }
+        return makeOutlineNode(from: vertices, kind: .floor)
+    }
+
+    private static func sanitizedFloorVertices(from payload: SanitizedRoomPayload) -> [simd_float3] {
+        let polygonFromShell: [simd_float3] = payload.room.floorPolygon.compactMap { point -> simd_float3? in
+            guard point.count >= 2 else { return nil }
+            return simd_float3(Float(point[0]), 0, Float(point[1]))
+        }
+        if isValidFloorPolygon(polygonFromShell) {
+            return polygonFromShell
+        }
+
+        let polygonFromWalls = floorPolygon(from: payload.walls)
+        if isValidFloorPolygon(polygonFromWalls) {
+            return polygonFromWalls
+        }
+
+        let room = payload.room
+        return [
+            simd_float3(-Float(max(room.boundingBox.width, 0.01) / 2), 0, -Float(max(room.boundingBox.depth, 0.01) / 2)),
+            simd_float3(Float(max(room.boundingBox.width, 0.01) / 2), 0, -Float(max(room.boundingBox.depth, 0.01) / 2)),
+            simd_float3(Float(max(room.boundingBox.width, 0.01) / 2), 0, Float(max(room.boundingBox.depth, 0.01) / 2)),
+            simd_float3(-Float(max(room.boundingBox.width, 0.01) / 2), 0, Float(max(room.boundingBox.depth, 0.01) / 2))
+        ]
+    }
+
+    private static func floorPolygon(from walls: [SanitizedWall]) -> [simd_float3] {
+        let points = walls.flatMap { wall in
+            let startX = wall.start.indices.contains(0) ? wall.start[0] : 0
+            let startZ = wall.start.indices.contains(1) ? wall.start[1] : 0
+            let endX = wall.end.indices.contains(0) ? wall.end[0] : 0
+            let endZ = wall.end.indices.contains(1) ? wall.end[1] : 0
+            return [
+                simd_float2(Float(startX), Float(startZ)),
+                simd_float2(Float(endX), Float(endZ))
+            ]
+        }
+        let uniquePoints = deduplicatedFloorPoints(points)
+        let hull = convexHull(uniquePoints)
+        return hull.map { simd_float3($0.x, 0, $0.y) }
+    }
+
+    private static func isValidFloorPolygon(_ polygon: [simd_float3]) -> Bool {
+        guard polygon.count >= 3 else { return false }
+        return abs(polygonArea(polygon)) > 0.01
+    }
+
+    private static func polygonArea(_ polygon: [simd_float3]) -> Float {
+        guard polygon.count >= 3 else { return 0 }
+        var area: Float = 0
+        for index in polygon.indices {
+            let current = polygon[index]
+            let next = polygon[(index + 1) % polygon.count]
+            area += (current.x * next.z) - (next.x * current.z)
+        }
+        return area * 0.5
+    }
+
+    private static func deduplicatedFloorPoints(_ points: [simd_float2], tolerance: Float = 0.02) -> [simd_float2] {
+        var unique: [simd_float2] = []
+        for point in points {
+            if unique.contains(where: { simd_distance($0, point) <= tolerance }) {
+                continue
+            }
+            unique.append(point)
+        }
+        return unique
+    }
+
+    private static func convexHull(_ points: [simd_float2]) -> [simd_float2] {
+        guard points.count > 3 else { return points }
+        let sorted = points.sorted {
+            if $0.x == $1.x { return $0.y < $1.y }
+            return $0.x < $1.x
+        }
+
+        func cross(_ origin: simd_float2, _ a: simd_float2, _ b: simd_float2) -> Float {
+            let oa = a - origin
+            let ob = b - origin
+            return (oa.x * ob.y) - (oa.y * ob.x)
+        }
+
+        var lower: [simd_float2] = []
+        for point in sorted {
+            while lower.count >= 2, cross(lower[lower.count - 2], lower[lower.count - 1], point) <= 0 {
+                lower.removeLast()
+            }
+            lower.append(point)
+        }
+
+        var upper: [simd_float2] = []
+        for point in sorted.reversed() {
+            while upper.count >= 2, cross(upper[upper.count - 2], upper[upper.count - 1], point) <= 0 {
+                upper.removeLast()
+            }
+            upper.append(point)
+        }
+
+        return Array((lower.dropLast() + upper.dropLast()))
+    }
+
+    private static func sanitizedSurfaceKind(for type: String) -> SurfaceKind {
+        switch type.lowercased() {
+        case "door":
+            return .door
+        case "window":
+            return .window
+        default:
+            return .opening
+        }
+    }
+
     @discardableResult
     private static func addExternalUSDZ(
         to rootNode: SCNNode,
@@ -346,11 +584,11 @@ enum BarebonesRoomSceneBuilder {
             return false
         }
 
-        let placedNode = normalizedImportedNode(from: importedNode)
-        placedNode.position = placementPosition(in: rootNode)
-        applyRenderingOrder(1000, to: placedNode)
-        placedNode.name = overlayNodeName(for: overlayIdentifier)
-        rootNode.addChildNode(placedNode)
+        let imported = normalizedImportedNode(from: importedNode)
+        imported.node.position = floorAlignedPlacementPosition(halfHeight: imported.halfHeight, in: rootNode)
+        applyRenderingOrder(1000, to: imported.node)
+        imported.node.name = overlayNodeName(for: overlayIdentifier)
+        rootNode.addChildNode(imported.node)
         return true
     }
 
@@ -364,16 +602,30 @@ enum BarebonesRoomSceneBuilder {
             return false
         }
 
-        let placedNode = normalizedImportedNode(from: importedNode)
-        placedNode.position = placementPosition(in: rootNode)
-        applyRenderingOrder(1000, to: placedNode)
-        placedNode.name = overlayNodeName(for: overlayIdentifier)
-        rootNode.addChildNode(placedNode)
+        let imported = normalizedImportedNode(from: importedNode)
+        imported.node.position = floorAlignedPlacementPosition(halfHeight: imported.halfHeight, in: rootNode)
+        applyRenderingOrder(1000, to: imported.node)
+        imported.node.name = overlayNodeName(for: overlayIdentifier)
+        rootNode.addChildNode(imported.node)
         return true
     }
 
+    /// Initial drop position for a manually-placed item: room-center xz, with y
+    /// raised by the model's half-height so the bottom sits on the floor.
+    /// `normalizedImportedNode` pivots each container at the rotated geometric
+    /// center, so lifting by `halfHeight` puts the AABB bottom at floor y.
+    private static func floorAlignedPlacementPosition(
+        halfHeight: Float,
+        in rootNode: SCNNode
+    ) -> SCNVector3 {
+        let base = placementPosition(in: rootNode)
+        return SCNVector3(base.x, base.y + halfHeight, base.z)
+    }
+
+    static let overlayNodeNamePrefix = "external-usdz-overlay-"
+
     static func overlayNodeName(for identifier: String) -> String {
-        "external-usdz-overlay-\(identifier)"
+        "\(overlayNodeNamePrefix)\(identifier)"
     }
 
     private static func loadExternalUSDZNode(named assetName: String) -> SCNNode? {
@@ -445,44 +697,183 @@ enum BarebonesRoomSceneBuilder {
         return false
     }
 
-    private static func normalizedImportedNode(from node: SCNNode) -> SCNNode {
+    /// Result of importing a remote USDZ: the placement-ready container plus the
+    /// rotated, scaled half-height of its geometry. We surface `halfHeight`
+    /// explicitly because `SCNNode.boundingBox` only reports the node's *own*
+    /// geometry — for our empty container that is always (0,0,0)..(0,0,0), so
+    /// callers can't recover the model height from the returned node alone.
+    struct NormalizedImport {
+        let node: SCNNode
+        let halfHeight: Float
+    }
+
+    private static func normalizedImportedNode(from node: SCNNode) -> NormalizedImport {
         let containerNode = SCNNode()
         let modelNode = node.clone()
-        let (minimumBounds, maximumBounds) = node.boundingBox
-        let centerX = (minimumBounds.x + maximumBounds.x) / 2
-        let centerZ = (minimumBounds.z + maximumBounds.z) / 2
 
-        modelNode.position.x -= centerX
-        modelNode.position.y -= minimumBounds.y
-        modelNode.position.z -= centerZ
-
-        let largestDimension = max(
-            maximumBounds.x - minimumBounds.x,
-            maximumBounds.y - minimumBounds.y,
-            maximumBounds.z - minimumBounds.z
-        )
-
-        if largestDimension > 5 {
-            let scale = 1 / largestDimension
-            modelNode.scale = SCNVector3(scale, scale, scale)
-        } else if largestDimension > 0, largestDimension < 0.05 {
-            let scale = 0.5 / largestDimension
-            modelNode.scale = SCNVector3(scale, scale, scale)
-        }
-
+        // Apply IKEA Z-up → SceneKit Y-up correction first; the AABB used for
+        // pivot alignment must reflect the rotated geometry, not the source one.
         modelNode.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
         modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
         modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
 
+        // The imported USDZ container has no geometry of its own — every mesh
+        // lives in a descendant. `SCNNode.boundingBox` only reports the node's
+        // *own* geometry box (returning (0,0,0)..(0,0,0) for our container),
+        // so we must combine descendant boxes manually.
+        guard let (geomMin, geomMax) = combinedDescendantBoundingBox(of: node) else {
+            containerNode.addChildNode(modelNode)
+            return NormalizedImport(node: containerNode, halfHeight: 0)
+        }
+
+        // Transform the 8 AABB corners through modelNode's rotation to get
+        // the rotated AABB. Only the X correction is non-zero, so we build
+        // that single rotation matrix and apply it.
+        let rotation = simd_float4x4(SCNMatrix4MakeRotation(modelNode.eulerAngles.x, 1, 0, 0))
+        var rotatedMin = SCNVector3(Float.infinity, Float.infinity, Float.infinity)
+        var rotatedMax = SCNVector3(-Float.infinity, -Float.infinity, -Float.infinity)
+        for cx in [geomMin.x, geomMax.x] {
+            for cy in [geomMin.y, geomMax.y] {
+                for cz in [geomMin.z, geomMax.z] {
+                    let r = rotation * simd_float4(cx, cy, cz, 1)
+                    rotatedMin.x = min(rotatedMin.x, r.x); rotatedMax.x = max(rotatedMax.x, r.x)
+                    rotatedMin.y = min(rotatedMin.y, r.y); rotatedMax.y = max(rotatedMax.y, r.y)
+                    rotatedMin.z = min(rotatedMin.z, r.z); rotatedMax.z = max(rotatedMax.z, r.z)
+                }
+            }
+        }
+
+        // Sanity-clamp absurdly large or tiny imports (rare for IKEA, kept as a guard).
+        let largestDimension = max(
+            rotatedMax.x - rotatedMin.x,
+            rotatedMax.y - rotatedMin.y,
+            rotatedMax.z - rotatedMin.z
+        )
+        let scaleFactor: Float
+        if largestDimension > 5 {
+            scaleFactor = 1 / largestDimension
+        } else if largestDimension > 0, largestDimension < 0.05 {
+            scaleFactor = 0.5 / largestDimension
+        } else {
+            scaleFactor = 1
+        }
+        if scaleFactor != 1 {
+            modelNode.scale = SCNVector3(scaleFactor, scaleFactor, scaleFactor)
+        }
+
+        // Pivot the model at its rotated, scaled geometric center so the
+        // container's origin matches the placement convention used by the
+        // server (`position.y = detected_floor + item_height / 2`).
+        let centerX = (rotatedMin.x + rotatedMax.x) / 2 * scaleFactor
+        let centerY = (rotatedMin.y + rotatedMax.y) / 2 * scaleFactor
+        let centerZ = (rotatedMin.z + rotatedMax.z) / 2 * scaleFactor
+        modelNode.position.x = -centerX
+        modelNode.position.y = -centerY
+        modelNode.position.z = -centerZ
+
         containerNode.addChildNode(modelNode)
-        return containerNode
+
+        let halfHeight = (rotatedMax.y - rotatedMin.y) * scaleFactor / 2
+        return NormalizedImport(node: containerNode, halfHeight: halfHeight)
     }
 
+    /// Walks `node`'s hierarchy and returns the smallest AABB that contains
+    /// every descendant geometry, expressed in `node`'s local frame. The
+    /// optional `include` predicate prunes whole subtrees: returning `false`
+    /// for a node skips it and all of its descendants. Returns nil if no
+    /// geometry passes the filter.
+    private static func combinedDescendantBoundingBox(
+        of node: SCNNode,
+        where include: (SCNNode) -> Bool = { _ in true }
+    ) -> (min: SCNVector3, max: SCNVector3)? {
+        var lo = SCNVector3(Float.infinity, Float.infinity, Float.infinity)
+        var hi = SCNVector3(-Float.infinity, -Float.infinity, -Float.infinity)
+        var found = false
+
+        func walk(_ n: SCNNode, transformFromN: simd_float4x4) {
+            guard include(n) else { return }
+            if n.geometry != nil {
+                let (gMin, gMax) = n.boundingBox
+                for cx in [gMin.x, gMax.x] {
+                    for cy in [gMin.y, gMax.y] {
+                        for cz in [gMin.z, gMax.z] {
+                            let t = transformFromN * simd_float4(cx, cy, cz, 1)
+                            lo.x = min(lo.x, t.x); hi.x = max(hi.x, t.x)
+                            lo.y = min(lo.y, t.y); hi.y = max(hi.y, t.y)
+                            lo.z = min(lo.z, t.z); hi.z = max(hi.z, t.z)
+                        }
+                    }
+                }
+                found = true
+            }
+            for child in n.childNodes {
+                walk(child, transformFromN: transformFromN * child.simdTransform)
+            }
+        }
+
+        walk(node, transformFromN: matrix_identity_float4x4)
+        return found ? (lo, hi) : nil
+    }
+
+    /// Initial drop position for a manually-placed item. Returns the room-shell
+    /// XZ center at the floor's world Y. `SCNNode.boundingBox` returns
+    /// origin-only for nodes without their own geometry (see the comment in
+    /// `normalizedImportedNode`), so we walk descendants ourselves and prefer
+    /// an explicit `floor-*` node lookup for Y when one is available.
     private static func placementPosition(in rootNode: SCNNode) -> SCNVector3 {
-        let (minimumBounds, maximumBounds) = rootNode.boundingBox
-        let centerX = (minimumBounds.x + maximumBounds.x) / 2
-        let centerZ = (minimumBounds.z + maximumBounds.z) / 2
-        return SCNVector3(centerX, minimumBounds.y, centerZ)
+        let shellBox = combinedDescendantBoundingBox(of: rootNode) { node in
+            node.name?.hasPrefix(overlayNodeNamePrefix) != true
+        }
+        let centerX: Float = shellBox.map { ($0.min.x + $0.max.x) / 2 } ?? 0
+        let centerZ: Float = shellBox.map { ($0.min.z + $0.max.z) / 2 } ?? 0
+
+        // Floor lookup is the most reliable signal. Fall back to the lowest
+        // point in the room shell — in well-formed rooms walls bottom out at
+        // the floor, so the two values agree.
+        let floor = floorY(in: rootNode) ?? shellBox?.min.y ?? 0
+
+        return SCNVector3(centerX, floor, centerZ)
+    }
+
+    /// Half the vertical extent of the geometry under `containerNode`, in the
+    /// container's local frame. For overlay containers produced by
+    /// `normalizedImportedNode` (origin = AABB center), this is the offset
+    /// needed to convert between the agent's BOTTOM-Y convention
+    /// (`position.y = floor_y`) and our scene's CENTER-Y convention
+    /// (`node.position.y = floor_y + halfHeight`). Returns 0 if the container
+    /// has no descendant geometry.
+    static func placementHalfHeight(of containerNode: SCNNode) -> Float {
+        guard let (lo, hi) = combinedDescendantBoundingBox(of: containerNode) else { return 0 }
+        return max(0, (hi.y - lo.y) / 2)
+    }
+
+    /// World Y of the floor's geometry in `rootNode`'s frame, by walking child
+    /// nodes named `floor-*`. Returns nil if no floor nodes are present.
+    static func floorY(in rootNode: SCNNode) -> Float? {
+        let floorNodes = rootNode.childNodes.filter {
+            $0.name?.hasPrefix("floor-") == true
+        }
+        guard !floorNodes.isEmpty else { return nil }
+
+        var lowest = Float.infinity
+        for floorNode in floorNodes {
+            guard let (localMin, localMax) = combinedDescendantBoundingBox(of: floorNode) else { continue }
+            // localMin/localMax are in floorNode's local frame. Apply the
+            // floor's own transform so the result lands in rootNode's frame —
+            // sanitized scenes encode floor Y in `floorNode.position.y`, while
+            // CapturedRoom scenes pack a full RoomPlan transform with rotation.
+            let t = floorNode.simdTransform
+            for cx in [localMin.x, localMax.x] {
+                for cy in [localMin.y, localMax.y] {
+                    for cz in [localMin.z, localMax.z] {
+                        let p = t * simd_float4(cx, cy, cz, 1)
+                        lowest = min(lowest, p.y)
+                    }
+                }
+            }
+        }
+
+        return lowest.isFinite ? lowest : nil
     }
 
     private static func applyRenderingOrder(_ renderingOrder: Int, to node: SCNNode) {
@@ -706,6 +1097,10 @@ enum BarebonesRoomImportLoader {
     static func loadScene(from data: Data) throws -> SCNScene {
         let decoder = JSONDecoder()
 
+        if let room = try? decoder.decode(SanitizedRoomPayload.self, from: data) {
+            return BarebonesRoomSceneBuilder.scene(for: room)
+        }
+
         if #available(iOS 17.0, *), let room = try? decoder.decode(BarebonesCapturedRoom.self, from: data) {
             return BarebonesRoomSceneBuilder.scene(for: room)
         }
@@ -719,6 +1114,10 @@ enum BarebonesRoomImportLoader {
 
     static func loadPlacedObjects(from data: Data) throws -> [PlacedFurnitureObject] {
         let decoder = JSONDecoder()
+
+        if let room = try? decoder.decode(SanitizedRoomPayload.self, from: data) {
+            return room.objects
+        }
 
         if #available(iOS 17.0, *), let room = try? decoder.decode(BarebonesCapturedRoom.self, from: data) {
             return room.objects
@@ -786,6 +1185,10 @@ enum BarebonesRoomJSONSanitizer {
     }
 
     static func normalizedRoomData(from data: Data) throws -> Data {
+        if let sanitizedRoom = try? JSONDecoder().decode(SanitizedRoomPayload.self, from: data) {
+            return try JSONEncoder.prettyPrintedSorted.encode(sanitizedRoom)
+        }
+
         let jsonObject = try JSONSerialization.jsonObject(with: data)
 
         guard var roomDictionary = jsonObject as? [String: Any] else {
@@ -818,6 +1221,12 @@ enum BarebonesRoomJSONSanitizer {
     }
 
     static func roomData(byUpdatingObjects objects: [PlacedFurnitureObject], in data: Data) throws -> Data {
+        if let sanitizedRoom = try? JSONDecoder().decode(SanitizedRoomPayload.self, from: data) {
+            return try JSONEncoder.prettyPrintedSorted.encode(
+                sanitizedRoom.replacingObjects(with: objects)
+            )
+        }
+
         let normalizedData = try normalizedRoomData(from: data)
         let jsonObject = try JSONSerialization.jsonObject(with: normalizedData)
 
@@ -880,6 +1289,14 @@ enum BarebonesExportError: LocalizedError {
         case .usdzExportFailed:
             return "The app could not generate the shell-only USDZ file."
         }
+    }
+}
+
+private extension JSONEncoder {
+    static var prettyPrintedSorted: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
     }
 }
 

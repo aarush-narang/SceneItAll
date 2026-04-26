@@ -1,29 +1,43 @@
-//
-//  ContentView.swift
-//  FurnitureRoomPlacement
-//
-//  Created by Kelvin Jou on 4/24/26.
-//
-
 import SwiftUI
 
 struct ContentView: View {
-    var body: some View {
+    @StateObject private var rootViewModel = AppRootViewModel()
 
-        OnboardingView()
-//        Button(action: {
-//            do {
-//                let sanitizedJSON = try loadSanitizedRoomPayload(fromJSONFilePath: "/Users/kelvinjou/Documents/GitHub/LAHacks2026/FurnitureRoomPlacement/FurnitureRoomPlacement/JSON_testfiles/southwest_corner.json")
-//                let jsonData = try RoomJSONSanitizer.sanitizedJSONData(from: sanitizedJSON)
-//
-//                let byteCountFormatter = ByteCountFormatter()
-//                byteCountFormatter.countStyle = .file
-//                print("sanitizedJson size: \(byteCountFormatter.string(fromByteCount: Int64(jsonData.count)))")
-//            } catch {
-//                print(error.localizedDescription)
-//            }
-//        }) {
-//            Text("Sanitize")
-//        }
+    var body: some View {
+        Group {
+            if !rootViewModel.hasCompletedOnboarding {
+                AppOnboardingView {
+                    rootViewModel.completeOnboarding()
+                }
+                .transition(.opacity)
+            } else if !rootViewModel.hasCompletedStyleQuiz {
+                StyleQuizView { result in
+                    rootViewModel.completeStyleQuiz(with: result)
+                }
+                .transition(.move(edge: .trailing))
+            } else {
+                DesignsListView()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: rootViewModel.hasCompletedOnboarding)
+        .animation(.easeInOut(duration: 0.35), value: rootViewModel.hasCompletedStyleQuiz)
+        .overlay {
+            if rootViewModel.isSavingStyleQuiz {
+                ZStack {
+                    Color.black.opacity(0.2)
+                        .ignoresSafeArea()
+
+                    ProgressView("Saving your preferences...")
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
+        }
+        .alert("Couldn't Save Preferences", isPresented: $rootViewModel.isShowingStyleQuizSaveError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(rootViewModel.styleQuizSaveErrorMessage)
+        }
     }
 }

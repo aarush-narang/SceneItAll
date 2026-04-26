@@ -5,10 +5,10 @@ cd "$(dirname "$0")"
 
 PORT=8000
 
-# Install cloudflared if not present
-if ! command -v cloudflared &>/dev/null; then
-  echo "Installing cloudflared..."
-  brew install cloudflared
+# Install ngrok if not present
+if ! command -v ngrok &>/dev/null; then
+  echo "Installing ngrok..."
+  brew install ngrok
 fi
 
 # Start uvicorn in the background
@@ -20,11 +20,11 @@ sleep 2
 
 echo ""
 echo "Server running locally on http://localhost:$PORT"
-echo "Starting Cloudflare quick tunnel..."
+echo "Starting ngrok tunnel..."
 echo ""
 
-# Quick tunnel — no account needed; prints a *.trycloudflare.com URL
-cloudflared tunnel --url "http://localhost:$PORT" &
+# Start ngrok tunnel and capture the output
+ngrok http "$PORT" &
 TUNNEL_PID=$!
 
 # On Ctrl-C, kill both

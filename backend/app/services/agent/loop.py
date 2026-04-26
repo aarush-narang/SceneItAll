@@ -2,7 +2,7 @@
 
 1. Build `AgentContext` and lazy-load design + prefs once.
 2. Assemble the system instruction (rubric + rules + prefs + room digest).
-3. Run a bounded tool-calling loop against `gemini-2.5-flash`.
+3. Run a bounded tool-calling loop against `gemini-3.1-pro-preview-customtools`.
 4. Aggregate mutation outputs, recommendation outputs, and a tool-call log.
 5. Persist the new chat turns to `chat_sessions`.
 6. Return the structured `AgentChatResponse`.
@@ -34,8 +34,8 @@ from .prompt import build_system_instruction
 from .registry import dispatch, function_declarations
 
 
-_MODEL_ID = "gemini-2.5-flash"
-_MAX_TOOL_ROUND_TRIPS = 8
+_MODEL_ID = "gemini-3.1-pro-preview-customtools"
+_MAX_TOOL_ROUND_TRIPS = 20
 
 
 def _coerce_placed(doc: dict[str, Any]) -> PlacedObject | None:
@@ -102,7 +102,8 @@ async def _load_history(session_id: str) -> list[types.Content]:
         role = "model" if turn.get("role") == "assistant" else turn.get("role")
         if role in ("user", "model"):
             history.append(
-                types.Content(role=role, parts=[types.Part(text=turn.get("content", ""))])
+                types.Content(role=role, parts=[
+                              types.Part(text=turn.get("content", ""))])
             )
     return history
 
@@ -135,7 +136,8 @@ async def run_agent_chat(req: AgentChatRequest) -> AgentChatResponse:
     recommendations: list[Recommendation] = []
     warnings: list[str] = []
     new_turns: list[ChatTurn] = [
-        ChatTurn(role="user", content=req.message, ts=datetime.now(timezone.utc))
+        ChatTurn(role="user", content=req.message,
+                 ts=datetime.now(timezone.utc))
     ]
 
     response = await chat.send_message(req.message)
@@ -167,7 +169,8 @@ async def run_agent_chat(req: AgentChatRequest) -> AgentChatResponse:
 
             fn_response_parts.append(
                 types.Part(
-                    function_response=types.FunctionResponse(name=name, response=result)
+                    function_response=types.FunctionResponse(
+                        name=name, response=result)
                 )
             )
             new_turns.append(

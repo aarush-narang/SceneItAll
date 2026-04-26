@@ -1,11 +1,7 @@
-//
-//  FurnitureDetailView.swift
-//  FurnitureRoomPlacement
-//
-//  Created by Kelvin Jou on 4/24/26.
-//
 import SwiftUI
 import SceneKit
+
+// MARK: - Furniture Catalog List
 
 struct FurnitureCatalogListView: View {
     @Binding var showFurnitureCatalog: Bool
@@ -17,6 +13,7 @@ struct FurnitureCatalogListView: View {
     @State private var selectedFurniture: Furniture?
     @State private var loadErrorMessage = ""
     @State private var isShowingLoadError = false
+    @State private var closeFurnitureSheet = false
 
     var body: some View {
         FurnitureSearchView(
@@ -31,12 +28,10 @@ struct FurnitureCatalogListView: View {
         )
         .navigationTitle("Furniture Catalog")
         .sheet(item: $selectedFurniture) { furniture in
-            FurnitureDetailView(furniture: furniture) { localUSDZURL in
+            FurnitureDetailView(closeSheet: $closeFurnitureSheet, furniture: furniture) { localUSDZURL in
                 let objectID = UUID().uuidString
                 let addSuccess = BarebonesRoomSceneBuilder.overlayExternalUSDZ(
-                    on: scene,
-                    fileURL: localUSDZURL,
-                    overlayIdentifier: objectID
+                    on: scene, fileURL: localUSDZURL, overlayIdentifier: objectID
                 )
                 if addSuccess {
                     let nodeName = BarebonesRoomSceneBuilder.overlayNodeName(for: objectID)
@@ -51,7 +46,6 @@ struct FurnitureCatalogListView: View {
                     )
                     onFurnitureAdded(addedObject)
                     hasOverlayedExternalUSDZ = true
-                    showFurnitureCatalog = false
                 }
                 selectedFurniture = nil
             }
@@ -66,19 +60,20 @@ struct FurnitureCatalogListView: View {
     }
 
     private func updateStoredFurnitureItems(with furniture: Furniture) -> [Furniture] {
-        if let existingIndex = furnitureItems.firstIndex(where: { $0.id == furniture.id }) {
-            var updatedItems = furnitureItems
-            updatedItems[existingIndex] = furniture
-            return updatedItems
+        if let index = furnitureItems.firstIndex(where: { $0.id == furniture.id }) {
+            var updated = furnitureItems
+            updated[index] = furniture
+            return updated
         }
-
         return furnitureItems + [furniture]
     }
 }
 
-struct FurnitureDetailView: View {
-    @Environment(\.dismiss) private var dismiss
+// MARK: - Furniture Detail View
 
+struct FurnitureDetailView: View {
+//    @Environment(\.dismiss) private var dismiss
+    @Binding var closeSheet: Bool
     let furniture: Furniture
     let onAdd: (URL) -> Void
 
@@ -92,41 +87,17 @@ struct FurnitureDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 previewSection
-                metadataSection
+                heroSection
+                addButton
 
-                Button {
-                    Task {
-                        await addToRoom()
-                    }
-                } label: {
-                    if isAddingToRoom {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Text("Add To Room")
-                            .frame(maxWidth: .infinity)
-                    }
+                if hasDetailedMetadata {
+                    detailedSections
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(isAddingToRoom || furniture.remoteUSDZURL == nil)
             }
-            .padding(24)
+            .padding(20)
         }
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(.secondarySystemBackground).opacity(0.9),
-                    Color(.systemBackground),
-                    Color(.secondarySystemBackground).opacity(0.7)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .task(id: furniture.id) {
-            await loadPreview()
-        }
+        .background(Color(.systemGroupedBackground))
+        .task(id: furniture.id) { await loadPreview() }
         .alert("Unable to Load Furniture", isPresented: $isShowingActionError) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -134,22 +105,17 @@ struct FurnitureDetailView: View {
         }
     }
 
+    // MARK: - 3D Preview
+
     private var previewSection: some View {
         SceneView(
             scene: previewScene,
             pointOfView: nil,
             options: [.autoenablesDefaultLighting]
         )
-        .frame(height: 360)
-        .background(
-            Color.black,
-            in: RoundedRectangle(cornerRadius: 30, style: .continuous)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(Color.white.opacity(0.16), lineWidth: 0.75)
-        }
+        .frame(height: 220)
+        .background(Color.black, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay {
             switch previewState {
             case .loading:
@@ -168,24 +134,112 @@ struct FurnitureDetailView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal)
                 }
+                .foregroundStyle(.white)
             case .loaded:
                 EmptyView()
             }
         }
-        .shadow(color: Color.black.opacity(0.08), radius: 24, y: 10)
+        .overlay(alignment: .bottom) {
+            Text("3D USDZ Preview")
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.4))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(.black.opacity(0.5), in: Capsule())
+                .padding(.bottom, 12)
+        }
     }
 
-    private var metadataSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(furniture.name)
-                .font(.title2.weight(.bold))
+    // MARK: - Hero Info
 
-            DetailSection("Overview") {
-                DetailTextBlock(text: furniture.designSummary)
-                DetailTextBlock(text: furniture.description)
+    private var heroSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(furniture.name)
+                .font(.system(size: 24, weight: .bold))
+
+            Text("\(furniture.formattedPrice) \u{00B7} \(furniture.attributes.materialPrimary)")
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+
+            if furniture.rating.value > 0 {
+                HStack(spacing: 4) {
+                    ForEach(0..<5, id: \.self) { index in
+                        Image(systemName: index < Int(furniture.rating.value) ? "star.fill" : "star")
+                            .font(.system(size: 14))
+                            .foregroundStyle(index < Int(furniture.rating.value) ? Color(red: 1, green: 0.72, blue: 0) : .gray.opacity(0.3))
+                    }
+                    Text(furniture.rating.value.formatted(.number.precision(.fractionLength(1))))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 4)
+                }
             }
 
-            DetailSection("Pricing And Rating") {
+            if !furniture.designSummary.isEmpty {
+                Text(furniture.designSummary)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(4)
+            }
+
+            if !furniture.attributes.styleTags.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(furniture.attributes.styleTags, id: \.self) { tag in
+                        Text(tag.replacingOccurrences(of: "_", with: " "))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.blue.opacity(0.1), in: Capsule())
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Add Button
+
+    private var addButton: some View {
+        Button {
+            Task {
+                await addToRoom()
+            }
+            closeSheet = true
+        } label: {
+            Group {
+                if isAddingToRoom {
+                    ProgressView().tint(.white)
+                } else {
+                    Text("Add To Room")
+                }
+            }
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(Color.black, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .disabled(isAddingToRoom || furniture.remoteUSDZURL == nil)
+    }
+
+    // MARK: - Detailed Metadata Sections
+
+    private var hasDetailedMetadata: Bool {
+        !furniture.description.isEmpty || furniture.price.value > 0
+    }
+
+    private var detailedSections: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !furniture.description.isEmpty {
+                DetailSection("Overview") {
+                    Text(furniture.description)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+
+            DetailSection("Pricing & Rating") {
                 DetailFactRow(label: "Price", value: furniture.formattedPrice)
                 DetailFactRow(
                     label: "Rating",
@@ -198,14 +252,6 @@ struct FurnitureDetailView: View {
                 DetailFactRow(label: "Source", value: furniture.source.name)
                 DetailFactRow(label: "Category", value: furniture.taxonomyInferred.category)
                 DetailFactRow(label: "Subcategory", value: furniture.taxonomyInferred.subcategory)
-                DetailFactRow(label: "IKEA Leaf", value: furniture.taxonomyIkea.categoryLeaf)
-                DetailFactRow(label: "Top Department", value: furniture.taxonomyIkea.topDepartment)
-                DetailFactRow(label: "Segment", value: furniture.taxonomyIkea.segment)
-                DetailFactRow(label: "Source URL", value: furniture.source.url)
-                DetailFactRow(
-                    label: "Category Path",
-                    value: furniture.taxonomyIkea.categoryPath.joined(separator: " > ")
-                )
             }
 
             DetailSection("Dimensions") {
@@ -219,68 +265,44 @@ struct FurnitureDetailView: View {
                 )
             }
 
-            DetailSection("Materials And Styling") {
+            DetailSection("Materials & Styling") {
                 DetailFactRow(label: "Primary Material", value: furniture.attributes.materialPrimary)
                 DetailFactRow(label: "Texture / Finish", value: furniture.attributes.textureAndFinish)
                 DetailFactRow(label: "Primary Color", value: furniture.attributes.colorPrimary)
-                DetailFactRow(label: "Era", value: furniture.attributes.era)
-                DetailFactRow(label: "Design Lineage", value: furniture.attributes.designLineage)
                 DetailFactRow(label: "Formality", value: furniture.attributes.formality)
                 DetailFactRow(label: "Visual Weight", value: furniture.attributes.visualWeight)
-                DetailFactRow(label: "Scale", value: furniture.attributes.scale)
             }
 
-            DetailSection("Placement") {
-                DetailFactRow(label: "Room Role", value: furniture.attributes.roomRole)
-                DetailFactRow(label: "Space Requirements", value: furniture.attributes.spaceRequirements)
-                DetailBoolRow(label: "Has Arms", value: furniture.attributes.hasArms)
-                DetailBoolRow(label: "Has Legs", value: furniture.attributes.hasLegs)
-                DetailBoolRow(label: "Stackable", value: furniture.attributes.stackable)
+            if !furniture.attributes.placementHints.isEmpty {
+                DetailSection("Placement Hints") {
+                    ForEach(furniture.attributes.placementHints, id: \.self) { hint in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("\u{2022}")
+                            Text(hint).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
 
-            DetailSection("Style Tags") {
-                TagBubbleGrid(tags: furniture.attributes.styleTags)
-            }
-
-            DetailSection("Ambient Mood") {
-                TagBubbleGrid(tags: furniture.attributes.ambientMood)
-            }
-
-            DetailSection("Suitable Rooms") {
-                TagBubbleGrid(tags: furniture.attributes.suitableRooms)
-            }
-
-            DetailSection("Placement Hints") {
-                DetailBulletList(items: furniture.attributes.placementHints)
-            }
-
-            DetailSection("Pairs Well With") {
-                DetailBulletList(items: furniture.attributes.pairsWellWith)
-            }
-
-            DetailSection("Use Scenarios") {
-                DetailBulletList(items: furniture.attributes.useScenarios)
-            }
-
-//            DetailSection("Files") {
-//                DetailFactRow(label: "USDZ", value: furniture.files.usdzURL)
-//                if !furniture.files.thumbURLs.isEmpty {
-//                    DetailFactRow(label: "Thumbnails", value: furniture.files.thumbURLs.joined(separator: "\n"))
-//                }
-//            }
-
-            DetailSection("Embedding Text") {
-                DetailTextBlock(text: furniture.embeddingText)
+            if !furniture.attributes.pairsWellWith.isEmpty {
+                DetailSection("Pairs Well With") {
+                    ForEach(furniture.attributes.pairsWellWith, id: \.self) { item in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("\u{2022}")
+                            Text(item).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    // MARK: - Actions
 
     @MainActor
     private func loadPreview() async {
         previewState = .loading
         previewScene = makePreviewScene()
-
         do {
             let localURL = try await resolvedUSDZURL()
             configurePreviewScene(scene: previewScene, fileURL: localURL)
@@ -292,20 +314,16 @@ struct FurnitureDetailView: View {
 
     @MainActor
     private func addToRoom() async {
-        guard !isAddingToRoom else {
-            return
-        }
-
+        guard !isAddingToRoom else { return }
         do {
             isAddingToRoom = true
             let localURL = try await resolvedUSDZURL()
             onAdd(localURL)
-            dismiss()
+            closeSheet = true
         } catch {
             actionErrorMessage = error.localizedDescription
             isShowingActionError = true
         }
-
         isAddingToRoom = false
     }
 
@@ -313,10 +331,11 @@ struct FurnitureDetailView: View {
         guard let remoteURL = furniture.remoteUSDZURL else {
             throw FurnitureDetailError.invalidUSDZURL
         }
-
         return try await RemoteUSDZCache.shared.localFileURL(for: remoteURL)
     }
 }
+
+// MARK: - Detail Sub-components
 
 private struct DetailSection<Content: View>: View {
     let title: String
@@ -329,16 +348,14 @@ private struct DetailSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
-
+            Text(title).font(.headline)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(.secondarySystemBackground).opacity(0.9))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
         )
     }
 }
@@ -353,74 +370,9 @@ private struct DetailFactRow: View {
                 Text(label)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-
                 Text(value)
                     .font(.body)
                     .textSelection(.enabled)
-            }
-        }
-    }
-}
-
-private struct DetailBoolRow: View {
-    let label: String
-    let value: Bool
-
-    var body: some View {
-        DetailFactRow(label: label, value: value ? "Yes" : "No")
-    }
-}
-
-private struct DetailTextBlock: View {
-    let text: String
-
-    var body: some View {
-        if !text.isEmpty {
-            Text(text)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-    }
-}
-
-private struct DetailBulletList: View {
-    let items: [String]
-
-    var body: some View {
-        if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(items, id: \.self) { item in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("•")
-                        Text(item)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct TagBubbleGrid: View {
-    let tags: [String]
-
-    private let columns = [
-        GridItem(.adaptive(minimum: 100), spacing: 8, alignment: .leading)
-    ]
-
-    var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-            ForEach(tags, id: \.self) { tag in
-                Text(tag.replacingOccurrences(of: "_", with: " "))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(Color.accentColor.opacity(0.12))
-                    )
             }
         }
     }
@@ -442,44 +394,42 @@ private enum PreviewState {
 
 private enum FurnitureDetailError: LocalizedError {
     case invalidUSDZURL
-
     var errorDescription: String? {
-        switch self {
-        case .invalidUSDZURL:
-            return "The furniture item is missing a valid USDZ URL."
-        }
+        "The furniture item is missing a valid USDZ URL."
     }
 }
+
+// MARK: - Preview Scene Helpers
 
 private func makePreviewScene() -> SCNScene {
     let scene = SCNScene()
     scene.background.contents = UIColor.black
 
-    let cameraNode = SCNNode()
-    cameraNode.camera = SCNCamera()
-    cameraNode.camera?.fieldOfView = 40
-    cameraNode.position = SCNVector3(0, 0.6, 4.2)
-    scene.rootNode.addChildNode(cameraNode)
+    let camera = SCNNode()
+    camera.camera = SCNCamera()
+    camera.camera?.fieldOfView = 40
+    camera.position = SCNVector3(0, 0.6, 4.2)
+    scene.rootNode.addChildNode(camera)
 
-    let ambientLight = SCNNode()
-    ambientLight.light = SCNLight()
-    ambientLight.light?.type = .ambient
-    ambientLight.light?.intensity = 500
-    scene.rootNode.addChildNode(ambientLight)
+    let ambient = SCNNode()
+    ambient.light = SCNLight()
+    ambient.light?.type = .ambient
+    ambient.light?.intensity = 500
+    scene.rootNode.addChildNode(ambient)
 
-    let keyLight = SCNNode()
-    keyLight.light = SCNLight()
-    keyLight.light?.type = .omni
-    keyLight.light?.intensity = 1200
-    keyLight.position = SCNVector3(2.5, 4, 4)
-    scene.rootNode.addChildNode(keyLight)
+    let key = SCNNode()
+    key.light = SCNLight()
+    key.light?.type = .omni
+    key.light?.intensity = 1200
+    key.position = SCNVector3(2.5, 4, 4)
+    scene.rootNode.addChildNode(key)
 
-    let fillLight = SCNNode()
-    fillLight.light = SCNLight()
-    fillLight.light?.type = .omni
-    fillLight.light?.intensity = 700
-    fillLight.position = SCNVector3(-3, 2, -1)
-    scene.rootNode.addChildNode(fillLight)
+    let fill = SCNNode()
+    fill.light = SCNLight()
+    fill.light?.type = .omni
+    fill.light?.intensity = 700
+    fill.position = SCNVector3(-3, 2, -1)
+    scene.rootNode.addChildNode(fill)
 
     return scene
 }
@@ -489,10 +439,7 @@ private func configurePreviewScene(scene: SCNScene, fileURL: URL) {
         .filter { $0.camera == nil && $0.light == nil }
         .forEach { $0.removeFromParentNode() }
 
-    guard let modelNode = loadPreviewNode(fileURL: fileURL) else {
-        return
-    }
-
+    guard let modelNode = loadPreviewNode(fileURL: fileURL) else { return }
     let spinNode = SCNNode()
     spinNode.addChildNode(modelNode)
     spinNode.runAction(.repeatForever(.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 18)))
@@ -501,63 +448,49 @@ private func configurePreviewScene(scene: SCNScene, fileURL: URL) {
 
 private func loadPreviewNode(fileURL: URL) -> SCNNode? {
     guard let scene = try? SCNScene(url: fileURL, options: nil),
-          let node = importedContentNode(from: scene) else {
-        return nil
-    }
-
+          let node = importedContentNode(from: scene) else { return nil }
     return normalizedPreviewNode(from: node)
 }
 
 private func importedContentNode(from scene: SCNScene) -> SCNNode? {
-    let containerNode = SCNNode()
-
+    let container = SCNNode()
     if scene.rootNode.geometry != nil {
-        containerNode.addChildNode(scene.rootNode.flattenedClone())
+        container.addChildNode(scene.rootNode.flattenedClone())
     }
-
-    for childNode in scene.rootNode.childNodes where containsRenderableContent(childNode) {
-        containerNode.addChildNode(childNode.clone())
+    for child in scene.rootNode.childNodes where containsRenderable(child) {
+        container.addChildNode(child.clone())
     }
-
-    return containerNode.childNodes.isEmpty ? nil : containerNode
+    return container.childNodes.isEmpty ? nil : container
 }
 
-private func containsRenderableContent(_ node: SCNNode) -> Bool {
-    if node.geometry != nil || node.morpher != nil || node.skinner != nil {
-        return true
-    }
-
-    return node.childNodes.contains(where: containsRenderableContent)
+private func containsRenderable(_ node: SCNNode) -> Bool {
+    if node.geometry != nil || node.morpher != nil || node.skinner != nil { return true }
+    return node.childNodes.contains(where: containsRenderable)
 }
 
 private func normalizedPreviewNode(from node: SCNNode) -> SCNNode {
-    let containerNode = SCNNode()
-    let modelNode = node.clone()
-    let (minimumBounds, maximumBounds) = node.boundingBox
-    let centerX = (minimumBounds.x + maximumBounds.x) / 2
-    let centerZ = (minimumBounds.z + maximumBounds.z) / 2
-    let height = maximumBounds.y - minimumBounds.y
-    let largestDimension = max(
-        maximumBounds.x - minimumBounds.x,
-        height,
-        maximumBounds.z - minimumBounds.z
-    )
+    let container = SCNNode()
+    let model = node.clone()
+    model.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
+    model.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
+    model.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
 
-    modelNode.position.x -= centerX
-    modelNode.position.y -= minimumBounds.y
-    modelNode.position.z -= centerZ
+    container.addChildNode(model)
 
-    if largestDimension > 0 {
-        let targetDimension: Float = 1.8
-        let scale = targetDimension / largestDimension
-        modelNode.scale = SCNVector3(scale, scale, scale)
+    var (minBounds, maxBounds) = container.boundingBox
+    let largest = max(maxBounds.x - minBounds.x, maxBounds.y - minBounds.y, maxBounds.z - minBounds.z)
+    if largest > 0 {
+        let scale = Float(1.8) / largest
+        model.scale = SCNVector3(scale, scale, scale)
     }
 
-    modelNode.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
-    modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
-    modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
+    (minBounds, maxBounds) = container.boundingBox
+    let cx = (minBounds.x + maxBounds.x) / 2
+    let cz = (minBounds.z + maxBounds.z) / 2
+    model.position.x -= cx
+    model.position.y -= minBounds.y
+    model.position.z -= cz
 
-    containerNode.addChildNode(modelNode)
-    containerNode.position.y = 0.2
-    return containerNode
+    container.position.y = 0.2
+    return container
 }

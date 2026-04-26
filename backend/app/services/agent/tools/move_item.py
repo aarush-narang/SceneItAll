@@ -17,11 +17,19 @@ class MoveItemInput(BaseModel):
     )
     position: tuple[float, float, float] | None = Field(
         default=None,
-        description="New (x, y, z) in meters. Omit to keep the current position.",
+        description=(
+            "New (x, y, z) in meters. y is VERTICAL; x and z are HORIZONTAL "
+            "(floor plane). position.y must equal the room's floor_y from the "
+            "room digest (items rest on the floor). Omit to keep the current "
+            "position."
+        ),
     )
     euler_angles: tuple[float, float, float] | None = Field(
         default=None,
-        description="New (pitch, yaw, roll) in radians. Omit to keep current rotation.",
+        description=(
+            "New (pitch, yaw, roll) in radians. yaw rotates about the +y "
+            "(vertical) axis. Omit to keep current rotation."
+        ),
     )
 
 

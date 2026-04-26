@@ -3,9 +3,6 @@ import Foundation
 final class FurnitureAPIClient {
     static let shared = FurnitureAPIClient()
 
-    private static let userDefaults = UserDefaults.standard
-    private static let generatedUserIDKey = "FurnitureGeneratedUserID"
-
     private let baseURL: URL
     private let session: URLSession
     private let decoder: JSONDecoder
@@ -13,14 +10,23 @@ final class FurnitureAPIClient {
 
     init(
         baseURL: URL? = nil,
-        session: URLSession = .shared,
+        session: URLSession? = nil,
         decoder: JSONDecoder = JSONDecoder(),
         encoder: JSONEncoder = JSONEncoder()
     ) {
         self.baseURL = baseURL ?? Self.defaultBaseURL
-        self.session = session
+        self.session = session ?? Self.makeDefaultSession()
         self.decoder = decoder
         self.encoder = encoder
+    }
+
+    private static func makeDefaultSession() -> URLSession {
+        let config = URLSessionConfiguration.default
+        // Multi-tool agent turns (e.g. "add a bed and a nightstand") run several
+        // Gemini round-trips and can exceed the 60s default. Give them headroom.
+        config.timeoutIntervalForRequest = 300
+        config.timeoutIntervalForResource = 600
+        return URLSession(configuration: config)
     }
 
     func searchFurniture(query: String, limit: Int = 10) async throws -> [Furniture] {
@@ -48,6 +54,68 @@ final class FurnitureAPIClient {
             .appending(path: "objects")
 
         return try await sendRequest(url: url)
+    }
+
+    func listDesigns(userID: String? = nil) async throws -> [RemoteDesign] {
+        let resolvedUserID = userID ?? Self.defaultUserID()
+        var components = URLComponents(
+            url: baseURL.appending(path: "/designs"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "user_id", value: resolvedUserID),
+            URLQueryItem(name: "_ts", value: String(Int(Date().timeIntervalSince1970 * 1000)))
+        ]
+
+        guard let url = components?.url else {
+            throw FurnitureAPIClientError.invalidRequest
+        }
+
+        return try await sendRequest(
+            url: url,
+            additionalHeaders: [
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache"
+            ]
+        )
+    }
+
+    func createDesign(
+        name: String,
+        shell: SanitizedRoomPayload,
+        objects: [PlacedFurnitureObject] = [],
+        userID: String? = nil
+    ) async throws -> RemoteDesign {
+        let payload = DesignCreateRequest(
+            userID: userID ?? Self.defaultUserID(),
+            name: name,
+            shell: shell,
+            objects: objects
+        )
+        let url = baseURL.appending(path: "/designs")
+        return try await sendRequest(url: url, method: "POST", body: payload)
+    }
+
+    func createDesign(
+        name: String,
+        barebonesJSONData: Data,
+        objects: [PlacedFurnitureObject] = [],
+        userID: String? = nil
+    ) async throws -> RemoteDesign {
+        let shell = try RoomJSONSanitizer.sanitizedRoom(from: barebonesJSONData, objects: objects)
+        return try await createDesign(
+            name: name,
+            shell: shell,
+            objects: objects,
+            userID: userID
+        )
+    }
+
+    func deleteDesign(id: String) async throws {
+        let url = baseURL
+            .appending(path: "/designs")
+            .appending(path: id)
+        try await sendRequest(url: url, method: "DELETE")
     }
 
     func addObjectToDesign(
@@ -92,6 +160,27 @@ final class FurnitureAPIClient {
         try await sendRequest(url: url, method: "PATCH", body: payload)
     }
 
+    func removeObjectFromDesign(
+        instanceID: String,
+        designID: String? = nil,
+        designName: String,
+        preferenceProfileID: String? = nil
+    ) async throws {
+        let resolvedDesignID = designID ?? Self.defaultDesignID()
+        let payload = DesignPatchRequest(
+            name: designName,
+            preferenceProfileID: preferenceProfileID ?? Self.defaultPreferenceProfileID(),
+            addItems: [],
+            updateItems: [],
+            deleteInstanceIDs: [instanceID]
+        )
+
+        let url = baseURL
+            .appending(path: "/designs")
+            .appending(path: resolvedDesignID)
+        try await sendRequest(url: url, method: "PATCH", body: payload)
+    }
+
     func agentChat(
         message: String,
         sessionID: String?,
@@ -108,10 +197,26 @@ final class FurnitureAPIClient {
         return try await sendRequest(url: url, method: "POST", body: payload)
     }
 
-    private func sendRequest<T: Decodable>(url: URL) async throws -> T {
+    func upsertPreferences(
+        _ preferences: PreferenceProfileUpsert,
+        userID: String? = nil
+    ) async throws {
+        let resolvedUserID = userID ?? Self.defaultUserID()
+        let url = baseURL
+            .appending(path: "/preferences")
+            .appending(path: resolvedUserID)
+
+        try await sendRequest(url: url, method: "PUT", body: preferences)
+    }
+
+    private func sendRequest<T: Decodable>(url: URL, additionalHeaders: [String: String] = [:]) async throws -> T {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        additionalHeaders.forEach { field, value in
+            request.setValue(value, forHTTPHeaderField: field)
+        }
 
         let data: Data
         let response: URLResponse
@@ -146,12 +251,39 @@ final class FurnitureAPIClient {
         let response: URLResponse
 
         do {
+            log("Sending \(method) request to \(url.absoluteString)")
             (data, response) = try await session.data(for: request)
         } catch let error as URLError {
+            log("Transport error for \(method) \(url.absoluteString): \(error.localizedDescription)")
             throw FurnitureAPIClientError.transportError(url: url, underlying: error)
         }
 
         try validate(response: response, data: data)
+        if let httpResponse = response as? HTTPURLResponse {
+            log("Received status \(httpResponse.statusCode) from \(method) \(url.absoluteString)")
+        }
+    }
+
+    private func sendRequest(url: URL, method: String) async throws {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let data: Data
+        let response: URLResponse
+
+        do {
+            log("Sending \(method) request to \(url.absoluteString)")
+            (data, response) = try await session.data(for: request)
+        } catch let error as URLError {
+            log("Transport error for \(method) \(url.absoluteString): \(error.localizedDescription)")
+            throw FurnitureAPIClientError.transportError(url: url, underlying: error)
+        }
+
+        try validate(response: response, data: data)
+        if let httpResponse = response as? HTTPURLResponse {
+            log("Received status \(httpResponse.statusCode) from \(method) \(url.absoluteString)")
+        }
     }
 
     private func sendRequest<TResponse: Decodable, TBody: Encodable>(
@@ -174,12 +306,17 @@ final class FurnitureAPIClient {
         let response: URLResponse
 
         do {
+            log("Sending \(method) request to \(url.absoluteString)")
             (data, response) = try await session.data(for: request)
         } catch let error as URLError {
+            log("Transport error for \(method) \(url.absoluteString): \(error.localizedDescription)")
             throw FurnitureAPIClientError.transportError(url: url, underlying: error)
         }
 
         try validate(response: response, data: data)
+        if let httpResponse = response as? HTTPURLResponse {
+            log("Received status \(httpResponse.statusCode) from \(method) \(url.absoluteString)")
+        }
         do {
             return try decoder.decode(TResponse.self, from: data)
         } catch {
@@ -229,14 +366,7 @@ final class FurnitureAPIClient {
             return configuredUserID
         }
 
-        if let persistedUserID = userDefaults.string(forKey: generatedUserIDKey),
-           !persistedUserID.isEmpty {
-            return persistedUserID
-        }
-
-        let generatedUserID = UUID().uuidString
-        userDefaults.set(generatedUserID, forKey: generatedUserIDKey)
-        return generatedUserID
+        return UserSession.shared.userID
     }
 }
 
@@ -295,6 +425,20 @@ struct DesignPatchRequest: Encodable {
         case addItems = "add_items"
         case updateItems = "update_items"
         case deleteInstanceIDs = "delete_instance_ids"
+    }
+}
+
+struct DesignCreateRequest: Encodable {
+    let userID: String
+    let name: String
+    let shell: SanitizedRoomPayload
+    let objects: [PlacedFurnitureObject]
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case name
+        case shell
+        case objects
     }
 }
 
@@ -379,7 +523,212 @@ struct AgentChatPlacement: Decodable {
 
 struct AgentChatToolCall: Decodable {}
 
+struct PreferenceProfileUpsert: Encodable {
+    let styleTags: [String]
+    let colorPalette: [String]
+    let materialPreferences: [String]
+    let spatialDensity: String
+    let philosophies: [String]
+    let hardRequirements: [String: String]
+
+    enum CodingKeys: String, CodingKey {
+        case styleTags = "style_tags"
+        case colorPalette = "color_palette"
+        case materialPreferences = "material_preferences"
+        case spatialDensity = "spatial_density"
+        case philosophies
+        case hardRequirements = "hard_requirements"
+    }
+}
+
+struct RemoteDesign: Decodable {
+    let id: String
+    let userID: String
+    let name: String
+    let preferenceProfileID: String?
+    let shell: RemoteRoomShell
+    let objects: [PlacedFurnitureObject]
+    let createdAt: Date
+    let updatedAt: Date
+    let deletedAt: Date?
+ 
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userID = "user_id"
+        case name
+        case preferenceProfileID = "preference_profile_id"
+        case shell
+        case objects
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case deletedAt = "deleted_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        userID = try container.decode(String.self, forKey: .userID)
+        name = try container.decode(String.self, forKey: .name)
+        preferenceProfileID = try container.decodeIfPresent(String.self, forKey: .preferenceProfileID)
+        shell = try container.decode(RemoteRoomShell.self, forKey: .shell)
+        objects = try container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects) ?? []
+        createdAt = try Self.decodeDate(forKey: .createdAt, from: container)
+        updatedAt = try Self.decodeDate(forKey: .updatedAt, from: container)
+        deletedAt = try Self.decodeOptionalDate(forKey: .deletedAt, from: container)
+    }
+
+    private static func decodeDate(
+        forKey key: CodingKeys,
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> Date {
+        let value = try container.decode(String.self, forKey: key)
+        if let parsedDate = parseDate(value) {
+            return parsedDate
+        }
+
+        throw DecodingError.dataCorruptedError(
+            forKey: key,
+            in: container,
+            debugDescription: "Expected ISO 8601 date string for \(key.stringValue), got \(value)"
+        )
+    }
+
+    private static func decodeOptionalDate(
+        forKey key: CodingKeys,
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> Date? {
+        guard let value = try container.decodeIfPresent(String.self, forKey: key) else {
+            return nil
+        }
+
+        guard let parsedDate = parseDate(value) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: container,
+                debugDescription: "Expected ISO 8601 date string for \(key.stringValue), got \(value)"
+            )
+        }
+
+        return parsedDate
+    }
+
+    private static func parseDate(_ value: String) -> Date? {
+        fractionalSecondsDateFormatter.date(from: value)
+            ?? internetDateTimeFormatter.date(from: value)
+            ?? malformedUTCDateFormatter.date(from: value)
+    }
+
+    private static let fractionalSecondsDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let internetDateTimeFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let malformedUTCDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSS"
+        return formatter
+    }()
+}
+
+typealias RemoteRoomShell = SanitizedRoomPayload
+
+struct DesignValidationErrorResponse: Decodable {
+    let detail: [DesignValidationErrorItem]
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        detail = try container.decode([DesignValidationErrorItem].self, forKey: .detail)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case detail
+    }
+}
+
+struct DesignValidationErrorItem: Decodable {
+    let loc: [DesignValidationErrorLocation]
+    let msg: String
+    let type: String
+    let input: String?
+    let ctx: [String: String]?
+
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        loc = try container.decode([DesignValidationErrorLocation].self, forKey: .loc)
+        msg = try container.decode(String.self, forKey: .msg)
+        type = try container.decode(String.self, forKey: .type)
+        input = try container.decodeIfPresent(String.self, forKey: .input)
+        ctx = try container.decodeIfPresent([String: String].self, forKey: .ctx)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case loc
+        case msg
+        case type
+        case input
+        case ctx
+    }
+}
+
+enum DesignValidationErrorLocation: Decodable, CustomStringConvertible {
+    case string(String)
+    case int(Int)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let stringValue = try? container.decode(String.self) {
+            self = .string(stringValue)
+            return
+        }
+
+        if let intValue = try? container.decode(Int.self) {
+            self = .int(intValue)
+            return
+        }
+
+        throw DecodingError.typeMismatch(
+            DesignValidationErrorLocation.self,
+            DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Expected a string or integer validation error location."
+            )
+        )
+    }
+
+    var description: String {
+        switch self {
+        case .string(let value):
+            return value
+        case .int(let value):
+            return String(value)
+        }
+    }
+}
+
 extension FurnitureAPIClient {
+    private func log(_ message: String) {
+        print("[FurnitureAPIClient] \(message)")
+    }
+
+    private func describe<T: Encodable>(_ value: T) -> String {
+        guard let data = try? encoder.encode(value),
+              let json = String(data: data, encoding: .utf8) else {
+            return "<unable to encode payload for logging>"
+        }
+
+        return json
+    }
+
     private func decodeErrorMessage(from error: Error) -> String {
         switch error {
         case let DecodingError.keyNotFound(key, context):
@@ -417,24 +766,17 @@ extension FurnitureAPIClientError {
     }
     
     private static func validationErrorMessage(from data: Data) -> String? {
-        guard
-            let jsonObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let detail = jsonObject["detail"] as? [[String: Any]]
-        else {
+        guard let response = try? JSONDecoder().decode(DesignValidationErrorResponse.self, from: data) else {
             return nil
         }
 
-        let messages = detail.compactMap { entry -> String? in
-            let location = (entry["loc"] as? [Any])?
-                .map { String(describing: $0) }
-                .joined(separator: ".") ?? ""
-            let message = entry["msg"] as? String ?? ""
-
-            guard !message.isEmpty else {
+        let messages = response.detail.compactMap { entry -> String? in
+            guard !entry.msg.isEmpty else {
                 return nil
             }
 
-            return location.isEmpty ? message : "\(location): \(message)"
+            let location = entry.loc.map(\.description).joined(separator: ".")
+            return location.isEmpty ? entry.msg : "\(location): \(entry.msg)"
         }
 
         return messages.isEmpty ? nil : messages.joined(separator: "\n")

@@ -2,8 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleIdentifier</key>
+	<string></string>
+	<key>FurnitureDesignID</key>
+	<string>e84d6fda-0469-452d-91da-e632a22fccc6</string>
 	<key>FurnitureAPIBaseURL</key>
-	<string>https://poison-groundwater-states-excess.trycloudflare.com</string>
+	<string>https://a088-2600-1012-b036-60ba-812f-ccd3-ca5c-e19b.ngrok-free.app</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera and LiDAR sensor to scan your room.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
