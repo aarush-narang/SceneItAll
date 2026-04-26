@@ -31,6 +31,12 @@ class DetectedObject(BaseModel):
         description="4x4 column-major transform (16 floats)"
     )
     confidence: str = "high"
+    object_frame_ids: list[str] = Field(
+        default_factory=list,
+        description="Frame IDs captured specifically for this object. "
+                    "When non-empty the pipeline uses only these frames "
+                    "instead of searching the full general frame pool.",
+    )
 
 
 class ScanPayload(BaseModel):
