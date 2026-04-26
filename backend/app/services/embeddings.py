@@ -30,6 +30,33 @@ def embed_text_gemini(text: str) -> list[float]:
     )
     return result.embeddings[0].values
 
+
+_CAPTION_PROMPT = (
+    "You are matching a piece of furniture in a room scan against an IKEA catalog. "
+    "Describe ONLY the foreground furniture item in 1-2 sentences. "
+    "Mention type, primary material, color, style, and any distinctive shape or features. "
+    "Do not describe the background or surroundings. Output the description only."
+)
+
+
+def caption_image_gemini(image: Image.Image, model: str = "gemini-2.0-flash") -> str:
+    """One-shot caption of a single image via Gemini Flash. Returns plain text
+    suitable for embedding via `embed_text_gemini`. Caller should encode the
+    image to JPEG/PNG bytes — Gemini handles either."""
+    import io
+    from google.genai import types
+
+    client = _get_gemini()
+    buf = io.BytesIO()
+    image.convert("RGB").save(buf, format="JPEG", quality=88)
+    image_part = types.Part.from_bytes(data=buf.getvalue(), mime_type="image/jpeg")
+
+    response = client.models.generate_content(
+        model=model,
+        contents=[image_part, _CAPTION_PROMPT],
+    )
+    return (response.text or "").strip()
+
 _lock = threading.Lock()
 _model = None
 _preprocess = None

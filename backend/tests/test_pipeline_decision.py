@@ -16,6 +16,7 @@ def _candidate(
     subcategory: str | None = "coffee_table",
     dims: tuple[float, float, float] = (1.2, 0.45, 0.6),
     clip_score: float = 0.6,
+    text_score: float = 0.0,
     dim_fit: float = 0.9,
 ) -> Candidate:
     combined = 0.7 * clip_score + 0.3 * dim_fit
@@ -27,6 +28,7 @@ def _candidate(
         dims=dims,
         usdz_url=f"https://r2/{pid}.usdz",
         clip_score=clip_score,
+        text_score=text_score,
         dim_fit_score=dim_fit,
         combined_score=combined,
     )

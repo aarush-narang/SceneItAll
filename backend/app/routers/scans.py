@@ -28,10 +28,11 @@ from ..pipeline.decision import COMMIT_THRESHOLD, decide
 from ..pipeline.embedding import embed_crops_mean
 from ..pipeline.filtering import build_candidate_filter
 from ..pipeline.frame_scoring import score_frame, select_top_frames
-from ..pipeline.matching import search_and_rank
+from ..pipeline.matching import hybrid_search_and_rank
 from ..pipeline.placement import compute_transform
 from ..pipeline.projection import bbox_corners_world, project_to_pixels
 from ..pipeline.segmentation import segment_to_white_bg
+from ..services.embeddings import caption_image_gemini, embed_text_gemini
 
 router = APIRouter(prefix="/v1/scans", tags=["scans"])
 
@@ -211,10 +212,32 @@ def _build_room_passthrough(scan: ScanPayload) -> dict:
 
 def _embed_object_sync(
     crops: list[Image.Image],
-) -> np.ndarray | None:
-    """Segment + embed in a worker thread (CLIP + rembg are CPU-bound)."""
+) -> tuple[np.ndarray | None, Image.Image | None]:
+    """Segment + visual-embed in a worker thread.
+
+    Returns `(visual_query_vec, best_segmented_crop)`. The best crop (the first
+    one — `select_top_frames` returns frames already sorted by score) is
+    handed back so the orchestrator can run a Gemini caption on it for the
+    text side of the hybrid search."""
+    if not crops:
+        return None, None
     segmented = [segment_to_white_bg(c) for c in crops]
-    return embed_crops_mean(segmented)
+    visual = embed_crops_mean(segmented)
+    return visual, segmented[0]
+
+
+def _caption_and_embed_sync(image: Image.Image) -> tuple[str, np.ndarray] | None:
+    """Run Gemini Flash caption + Gemini text embed on one image. Returns
+    `(caption, text_query_vec)` or None if either step fails. Network IO is
+    blocking, so this runs in a worker thread."""
+    try:
+        caption = caption_image_gemini(image)
+        if not caption:
+            return None
+        vec = np.asarray(embed_text_gemini(caption), dtype=np.float32)
+        return caption, vec
+    except Exception:
+        return None
 
 
 async def _process_object(
@@ -261,14 +284,27 @@ async def _process_object_inner(
         except ValueError:
             continue
 
-    query_vec = await asyncio.to_thread(_embed_object_sync, crops) if crops else None
+    query_vec: np.ndarray | None = None
+    text_query_vec: np.ndarray | None = None
+    caption: str | None = None
+    if crops:
+        query_vec, best_crop = await asyncio.to_thread(_embed_object_sync, crops)
+        if best_crop is not None:
+            caption_result = await asyncio.to_thread(_caption_and_embed_sync, best_crop)
+            if caption_result is not None:
+                caption, text_query_vec = caption_result
 
     candidates = []
     if query_vec is not None:
         candidate_filter = build_candidate_filter(obj.category, obj.dimensions)
         if candidate_filter is not None:
             try:
-                candidates = await search_and_rank(query_vec, obj.dimensions, candidate_filter)
+                candidates = await hybrid_search_and_rank(
+                    visual_query=query_vec,
+                    text_query=text_query_vec,
+                    detected_dims=obj.dimensions,
+                    candidate_filter=candidate_filter,
+                )
             except Exception as exc:
                 log.warning(
                     "scan.vector_search_failed",
@@ -291,12 +327,16 @@ async def _process_object_inner(
         decision_reason=decision.reason,
         matched_product_id=(decision.matched.product_id if decision.matched else "WHITE_BOX"),
         matched_product_name=(decision.matched.name if decision.matched else None),
-        top_score=round(decision.top_score, 3),
+        top_clip_score=round(decision.matched.clip_score, 3) if decision.matched else 0.0,
+        top_text_score=round(decision.matched.text_score, 3) if decision.matched else 0.0,
+        top_dim_fit=round(decision.matched.dim_fit_score, 3) if decision.matched else 0.0,
+        top_combined=round(decision.top_score, 3),
         category_consistency=round(decision.category_consistency, 3),
         n_frames_used=len(top),
         n_candidates=len(candidates),
-        had_embedding=query_vec is not None,
-        filter_built=(query_vec is not None and build_candidate_filter(obj.category, obj.dimensions) is not None),
+        had_visual=query_vec is not None,
+        had_text=text_query_vec is not None,
+        gemini_caption=caption,
     )
 
     await _log_decision(scan_id, obj, refined, decision, len(top))
