@@ -1,4 +1,4 @@
-from .routers import furniture, designs, preferences, agent
+from .routers import furniture, designs, preferences, agent, scans
 from .db import close_client, check_connection
 from .logging import configure_logging, log
 from fastapi import FastAPI
@@ -23,6 +23,7 @@ app.include_router(furniture.router)
 app.include_router(designs.router)
 app.include_router(preferences.router)
 app.include_router(agent.router)
+app.include_router(scans.router)
 
 
 @app.get("/health")
