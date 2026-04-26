@@ -9,6 +9,17 @@ enum FurnitureInteractionMode {
 
 @MainActor
 final class RoomEditorViewModel: ObservableObject {
+    private enum ShellLighting {
+        static let defaultLevel = 0.5
+        static let minimumDiffuseIntensity: CGFloat = 0.45
+        static let maximumDiffuseIntensity: CGFloat = 1.55
+        static let baseAmbientIntensity: CGFloat = 800
+        static let baseOmniIntensity: CGFloat = 900
+        static let minimumLightMultiplier: CGFloat = 0.6
+        static let maximumLightMultiplier: CGFloat = 1.45
+        static let shellNodePrefixes = ["floor-", "wall-", "door-", "window-", "opening-"]
+    }
+
     let scene: SCNScene
     let title: String
     let baseRoomData: Data
@@ -17,6 +28,7 @@ final class RoomEditorViewModel: ObservableObject {
     @Published var placedObjects: [PlacedFurnitureObject]
     @Published var hasOverlayedExternalUSDZ: Bool
     @Published var areWallsDimmed = false
+    @Published var shellLightingLevel: Double
     @Published var furnitureInteractionMode: FurnitureInteractionMode = .view
     @Published var showFurnitureCatalog = false
 
@@ -60,7 +72,7 @@ final class RoomEditorViewModel: ObservableObject {
         return trimmed.isEmpty ? "BarebonesRoom" : "\(trimmed)_furnished"
     }
 
-    nonisolated init(
+    init(
         scene: SCNScene,
         title: String,
         baseRoomData: Data,
@@ -74,12 +86,27 @@ final class RoomEditorViewModel: ObservableObject {
         self.initialPlacedObjects = initialPlacedObjects
         self._placedObjects = Published(initialValue: initialPlacedObjects)
         self._hasOverlayedExternalUSDZ = Published(initialValue: !initialPlacedObjects.isEmpty)
+        self._shellLightingLevel = Published(initialValue: ShellLighting.defaultLevel)
     }
 
     // MARK: - Wall Opacity
 
+    func applySceneAppearance() {
+        applyWallDimming()
+        applyShellLighting()
+    }
+
     func toggleWallDimming() {
         areWallsDimmed.toggle()
+        applyWallDimming()
+    }
+
+    func setShellLightingLevel(_ level: Double) {
+        shellLightingLevel = min(max(level, 0), 1)
+        applyShellLighting()
+    }
+
+    private func applyWallDimming() {
         let opacity: CGFloat = areWallsDimmed ? 0.5 : 1.0
         let writesToDepth = !areWallsDimmed
         for wallNode in scene.rootNode.childNodes(passingTest: { n, _ in n.name?.hasPrefix("wall-") == true }) {
@@ -93,15 +120,59 @@ final class RoomEditorViewModel: ObservableObject {
         }
     }
 
+    private func applyShellLighting() {
+        let diffuseIntensity = interpolatedValue(
+            for: shellLightingLevel,
+            minimum: ShellLighting.minimumDiffuseIntensity,
+            maximum: ShellLighting.maximumDiffuseIntensity
+        )
+        let lightMultiplier = interpolatedValue(
+            for: shellLightingLevel,
+            minimum: ShellLighting.minimumLightMultiplier,
+            maximum: ShellLighting.maximumLightMultiplier
+        )
+
+        for shellNode in scene.rootNode.childNodes(passingTest: { node, _ in
+            guard let name = node.name else { return false }
+            return ShellLighting.shellNodePrefixes.contains { name.hasPrefix($0) }
+        }) {
+            setDiffuseIntensity(diffuseIntensity, on: shellNode)
+        }
+
+        for lightNode in scene.rootNode.childNodes(passingTest: { node, _ in
+            guard let light = node.light else { return false }
+            return light.type == .ambient || light.type == .omni
+        }) {
+            guard let light = lightNode.light else { continue }
+            switch light.type {
+            case .ambient:
+                light.intensity = ShellLighting.baseAmbientIntensity * lightMultiplier
+            case .omni:
+                light.intensity = ShellLighting.baseOmniIntensity * lightMultiplier
+            default:
+                break
+            }
+        }
+    }
+
     private func setOpacity(_ opacity: CGFloat, on node: SCNNode) {
         node.opacity = opacity
         node.geometry?.materials.forEach { $0.transparency = opacity }
         node.childNodes.forEach { setOpacity(opacity, on: $0) }
     }
 
+    private func setDiffuseIntensity(_ intensity: CGFloat, on node: SCNNode) {
+        node.geometry?.materials.forEach { $0.diffuse.intensity = intensity }
+        node.childNodes.forEach { setDiffuseIntensity(intensity, on: $0) }
+    }
+
     private func setDepthWrite(_ writes: Bool, on node: SCNNode) {
         node.geometry?.materials.forEach { $0.writesToDepthBuffer = writes }
         node.childNodes.forEach { setDepthWrite(writes, on: $0) }
+    }
+
+    private func interpolatedValue(for level: Double, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
+        minimum + (maximum - minimum) * CGFloat(level)
     }
 
     // MARK: - Interaction Mode

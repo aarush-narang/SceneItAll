@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct RoomEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: RoomEditorViewModel
+    @State private var isShowingShellLightingControls = false
 
     init(
         scene: SCNScene,
@@ -74,9 +75,21 @@ struct RoomEditorView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { viewModel.toggleWallDimming() } label: {
-                        Image(systemName: viewModel.areWallsDimmed ? "eye.slash" : "eye")
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 14) {
+                        Button {
+                            isShowingShellLightingControls.toggle()
+                        } label: {
+                            Image(systemName: "lightbulb.max")
+                                .foregroundStyle(.secondary)
+                        }
+                        .popover(isPresented: $isShowingShellLightingControls, arrowEdge: .top) {
+                            shellLightingPopover
+                        }
+
+                        Button { viewModel.toggleWallDimming() } label: {
+                            Image(systemName: viewModel.areWallsDimmed ? "eye.slash" : "eye")
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -132,6 +145,7 @@ struct RoomEditorView: View {
                 if !hasOverlay { viewModel.furnitureInteractionMode = .view }
             }
             .task {
+                viewModel.applySceneAppearance()
                 await viewModel.restoreSavedFurnitureIfNeeded()
             }
             .edgesIgnoringSafeArea(.bottom)
@@ -169,6 +183,40 @@ struct RoomEditorView: View {
             Color(.systemBackground)
                 .shadow(color: .black.opacity(0.06), radius: 8, y: -2)
         )
+    }
+
+    private var shellLightingPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Surface Lighting")
+                .font(.headline)
+
+            Text("Adjust the brightness on the room shell surfaces.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Image(systemName: "moon.stars.fill")
+                    .foregroundStyle(.secondary)
+
+                Slider(
+                    value: Binding(
+                        get: { viewModel.shellLightingLevel },
+                        set: { viewModel.setShellLightingLevel($0) }
+                    ),
+                    in: 0...1
+                )
+
+                Image(systemName: "sun.max.fill")
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(viewModel.shellLightingLevel < 0.34 ? "Dim" : viewModel.shellLightingLevel > 0.66 ? "Bright" : "Balanced")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(width: 260)
+        .presentationCompactAdaptation(.popover)
     }
 }
 
