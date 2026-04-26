@@ -7,7 +7,7 @@
 	<key>FurnitureDesignID</key>
 	<string>cd39378c-2704-4326-854e-212d15fcc6ea</string>
 	<key>FurnitureAPIBaseURL</key>
-	<string>https://d06e-2600-1012-b036-60ba-812f-ccd3-ca5c-e19b.ngrok-free.app/</string>
+	<string>https://a088-2600-1012-b036-60ba-812f-ccd3-ca5c-e19b.ngrok-free.app</string>
 	<key>NSCameraUsageDescription</key>
 	<string>This app uses the camera and LiDAR sensor to scan your room.</string>
 	<key>NSAppTransportSecurity</key>

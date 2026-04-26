@@ -8,7 +8,7 @@
 
 import Foundation
 
-let baseURL = "https://d06e-2600-1012-b036-60ba-812f-ccd3-ca5c-e19b.ngrok-free.app/"
+let baseURL = "https://a088-2600-1012-b036-60ba-812f-ccd3-ca5c-e19b.ngrok-free.app"
 
 let furnitureAssets: [String: String] = [ // key: name, value: usdz file path
     "bedframe": "bedframe",
