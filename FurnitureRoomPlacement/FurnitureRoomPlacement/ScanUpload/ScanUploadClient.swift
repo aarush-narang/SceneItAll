@@ -49,14 +49,37 @@ final class ScanUploadClient {
     }
 
     /// Bundle the scan + frames into a multipart POST and return the matcher's response.
-    func upload(room: CapturedRoom, frames: [CapturedFrame]) async throws -> MatchedScene {
-        let scanJSON = try ScanPayloadBuilder.encodeScanJSON(room)
-        let framesMetadata = try ScanPayloadBuilder.encodeFramesMetadata(frames)
+    ///
+    /// - Parameter objectFrames: Per-object burst frames keyed by RoomPlan object UUID.
+    ///   These are merged with `frames` (deduped by frameId) and their IDs are embedded
+    ///   in each `DetectedObject` so the backend can skip its full-pool frame search.
+    func upload(
+        room: CapturedRoom,
+        frames: [CapturedFrame],
+        objectFrames: [String: [CapturedFrame]] = [:]
+    ) async throws -> MatchedScene {
+        // Build the objectFrameIds map (objectId → [frameId]) for the scan payload.
+        var objectFrameIds: [String: [String]] = [:]
+        for (objectId, objFrames) in objectFrames where !objFrames.isEmpty {
+            objectFrameIds[objectId] = objFrames.map(\.frameId)
+        }
+
+        // Merge general + object frames, deduplicating by frameId.
+        var allFramesById: [String: CapturedFrame] = Dictionary(
+            uniqueKeysWithValues: frames.map { ($0.frameId, $0) }
+        )
+        for objFrames in objectFrames.values {
+            for f in objFrames { allFramesById[f.frameId] = f }
+        }
+        let allFrames = Array(allFramesById.values)
+
+        let scanJSON = try ScanPayloadBuilder.encodeScanJSON(room, objectFrameIds: objectFrameIds)
+        let framesMetadata = try ScanPayloadBuilder.encodeFramesMetadata(allFrames)
 
         var form = MultipartFormBuilder()
         form.appendField(name: "scan_json", data: scanJSON, contentType: "application/json")
         form.appendField(name: "frames_metadata", data: framesMetadata, contentType: "application/json")
-        for frame in frames {
+        for frame in allFrames {
             form.appendFile(
                 name: frame.frameId,
                 filename: "\(frame.frameId).jpg",

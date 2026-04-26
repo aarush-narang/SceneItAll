@@ -26,10 +26,12 @@ TEXT_PATH = "embeddings.text.vec"
 DEFAULT_TOP_K = 20
 
 # Retrieval mode:
-#   "text"   — Gemini caption → text embedding only (recommended for furniture)
+#   "text"   — Gemini caption → text embedding only (prone to color/material
+#              anchoring; ignores shape entirely)
 #   "visual" — CLIP visual only
-#   "hybrid" — both, weighted by W_VISUAL / W_TEXT / W_DIM_HYBRID
-MATCH_MODE = "text"
+#   "hybrid" — text + visual + dims; best overall because CLIP shape features
+#              give an independent signal from the Gemini caption
+MATCH_MODE = "hybrid"
 
 # Visual-only weights (used by `search_and_rank`, kept for backwards compat).
 W_CLIP = 0.7

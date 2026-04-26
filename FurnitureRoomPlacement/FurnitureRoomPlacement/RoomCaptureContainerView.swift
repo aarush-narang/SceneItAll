@@ -16,10 +16,12 @@ final class ScanResultHolder {
     static let shared = ScanResultHolder()
     var room: CapturedRoom?
     var frames: [CapturedFrame] = []
+    var objectFrames: [String: [CapturedFrame]] = [:]
 
     func clear() {
         room = nil
         frames = []
+        objectFrames = [:]
     }
 }
 
@@ -91,7 +93,10 @@ struct RoomCaptureViewRepresentable: UIViewRepresentable {
     @ObservedObject var model: RoomCaptureModel
 
     func makeCoordinator() -> RoomCaptureCoordinator {
-        RoomCaptureCoordinator(model: model)
+        // Pass frameSampler directly so the coordinator can call it from
+        // background RoomCaptureSessionDelegate callbacks without going
+        // through the @MainActor-isolated model.
+        RoomCaptureCoordinator(model: model, frameSampler: model.frameSampler)
     }
 
     func makeUIView(context: Context) -> RoomCaptureView {
@@ -321,15 +326,20 @@ final class RoomCaptureModel: ObservableObject {
         isProcessing = false
         ScanResultHolder.shared.room = processedResult
         ScanResultHolder.shared.frames = frameSampler.snapshot()
+        ScanResultHolder.shared.objectFrames = frameSampler.snapshotObjectFrames()
         isScanComplete = true
     }
 }
 
 final class RoomCaptureCoordinator: NSObject, RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
     var model: RoomCaptureModel
+    // Held directly (not through the @MainActor model) so background delegate
+    // callbacks can call it without an actor hop.
+    private let frameSampler: FrameSampler
 
-    init(model: RoomCaptureModel) {
+    init(model: RoomCaptureModel, frameSampler: FrameSampler) {
         self.model = model
+        self.frameSampler = frameSampler
     }
 
     required init?(coder: NSCoder) {
@@ -350,6 +360,12 @@ final class RoomCaptureCoordinator: NSObject, RoomCaptureViewDelegate, RoomCaptu
             }
             model.handleProcessedResult(processedResult)
         }
+    }
+
+    /// Fires on a background thread each time RoomPlan updates its room model.
+    /// Forward to FrameSampler so it can trigger object-targeted burst capture.
+    func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
+        frameSampler.processRoomUpdate(room)
     }
 
     func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: (any Error)?) {

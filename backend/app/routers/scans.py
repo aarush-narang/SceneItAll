@@ -226,12 +226,14 @@ def _embed_object_sync(
     return visual, segmented[0]
 
 
-def _caption_and_embed_sync(image: Image.Image) -> tuple[str, np.ndarray] | None:
+def _caption_and_embed_sync(
+    image: Image.Image, category: str | None = None
+) -> tuple[str, np.ndarray] | None:
     """Run Gemini Flash caption + Gemini text embed on one image. Returns
     `(caption, text_query_vec)` or None if either step fails. Network IO is
     blocking, so this runs in a worker thread."""
     try:
-        caption = caption_image_gemini(image)
+        caption = caption_image_gemini(image, category=category)
         if not caption:
             return None
         vec = np.asarray(embed_text_gemini(caption), dtype=np.float32)
@@ -309,7 +311,9 @@ async def _process_object_inner(
     if crops:
         query_vec, best_crop = await asyncio.to_thread(_embed_object_sync, crops)
         if best_crop is not None:
-            caption_result = await asyncio.to_thread(_caption_and_embed_sync, best_crop)
+            caption_result = await asyncio.to_thread(
+                _caption_and_embed_sync, best_crop, obj.category
+            )
             if caption_result is not None:
                 caption, text_query_vec = caption_result
 
@@ -333,7 +337,11 @@ async def _process_object_inner(
                 )
 
     refined = refine_category(obj.category, candidates)
-    decision = decide(candidates, had_usable_embedding=query_vec is not None)
+    decision = decide(
+        candidates,
+        had_usable_embedding=query_vec is not None,
+        roomplan_category=obj.category,
+    )
 
     transform = compute_transform(obj, decision.matched)
 
