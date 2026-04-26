@@ -141,7 +141,8 @@ final class RoomJSONSanitizer {
 
         if !corners.isEmpty {
             return corners.map { corner in
-                [rounded(corner.x), rounded(corner.z)]
+                let worldCorner = transformedPoint(corner, by: surface.transform)
+                return [rounded(worldCorner.x), rounded(worldCorner.z)]
             }
         }
 
@@ -202,6 +203,27 @@ final class RoomJSONSanitizer {
             rounded(transform[safe: 13] ?? 0),
             rounded(transform[safe: 14] ?? 0)
         ]
+    }
+
+    private static func transformedPoint(_ point: RawVector3, by transform: [Double]) -> (x: Double, y: Double, z: Double) {
+        let x = point.x
+        let y = point.y
+        let z = point.z
+
+        return (
+            x: (transform[safe: 0] ?? 1) * x
+                + (transform[safe: 4] ?? 0) * y
+                + (transform[safe: 8] ?? 0) * z
+                + (transform[safe: 12] ?? 0),
+            y: (transform[safe: 1] ?? 0) * x
+                + (transform[safe: 5] ?? 1) * y
+                + (transform[safe: 9] ?? 0) * z
+                + (transform[safe: 13] ?? 0),
+            z: (transform[safe: 2] ?? 0) * x
+                + (transform[safe: 6] ?? 0) * y
+                + (transform[safe: 10] ?? 1) * z
+                + (transform[safe: 14] ?? 0)
+        )
     }
 
     private static func yaw(from transform: [Double]) -> Double {
