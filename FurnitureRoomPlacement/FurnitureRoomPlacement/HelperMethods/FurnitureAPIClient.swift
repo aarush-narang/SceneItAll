@@ -10,14 +10,23 @@ final class FurnitureAPIClient {
 
     init(
         baseURL: URL? = nil,
-        session: URLSession = .shared,
+        session: URLSession? = nil,
         decoder: JSONDecoder = JSONDecoder(),
         encoder: JSONEncoder = JSONEncoder()
     ) {
         self.baseURL = baseURL ?? Self.defaultBaseURL
-        self.session = session
+        self.session = session ?? Self.makeDefaultSession()
         self.decoder = decoder
         self.encoder = encoder
+    }
+
+    private static func makeDefaultSession() -> URLSession {
+        let config = URLSessionConfiguration.default
+        // Multi-tool agent turns (e.g. "add a bed and a nightstand") run several
+        // Gemini round-trips and can exceed the 60s default. Give them headroom.
+        config.timeoutIntervalForRequest = 300
+        config.timeoutIntervalForResource = 600
+        return URLSession(configuration: config)
     }
 
     func searchFurniture(query: String, limit: Int = 10) async throws -> [Furniture] {
