@@ -5,6 +5,11 @@
 //  Captures throttled ARKit frames during a RoomPlan scan so the backend
 //  matcher has RGB context to embed each detected piece of furniture against.
 //
+//  Object-targeted burst capture: when RoomPlan detects a new object (or
+//  upgrades one to .high confidence), processRoomUpdate(_:) queues a burst
+//  so the next N ARFrames are stored under that object's UUID. The backend
+//  prefers these targeted frames over the general time-sampled pool.
+//
 
 import Foundation
 import ARKit
@@ -25,8 +30,15 @@ struct CapturedFrame {
 }
 
 /// Subscribes to the underlying `ARSession` of a `RoomCaptureSession` and
-/// stashes a downsampled frame at most every `1 / targetFPS` seconds. Caps
-/// in-memory frames at `maxFrames` (drops the oldest when exceeded).
+/// maintains two pools of frames:
+///
+/// - **General pool**: time-sampled at `targetFPS`, capped at `maxFrames`.
+///   Used as a fallback when no object-specific frames exist.
+///
+/// - **Object burst pool**: keyed by RoomPlan object UUID. Filled when
+///   `processRoomUpdate` detects a new object or a confidence upgrade.
+///   The backend uses these frames directly, skipping its own frame-scoring
+///   loop over the full general pool.
 final class FrameSampler: NSObject, ARSessionDelegate {
 
     // MARK: tunable constants
@@ -35,23 +47,69 @@ final class FrameSampler: NSObject, ARSessionDelegate {
     private let maxImageDimension: CGFloat = 1024
     private let jpegQuality: CGFloat = 0.85
 
-    // MARK: state
+    private let burstCountOnDetect: Int = 5   // frames captured when object first seen
+    private let burstCountOnHighConf: Int = 3 // additional frames when confidence → .high
+
+    // MARK: state — all access must be on `queue`
     private let queue = DispatchQueue(label: "frame-sampler.process")
     private let context = CIContext(options: [.useSoftwareRenderer: false])
+
+    // General time-based pool
     private var lastSampleTime: TimeInterval = 0
     private var frames: [CapturedFrame] = []
     private var nextFrameNumber = 0
 
-    /// Snapshot of frames captured so far. Safe to call on the main queue.
+    // Object-targeted burst pool
+    private var activeBursts: [String: Int] = [:]          // objectId → remaining count
+    private var objectFrames: [String: [CapturedFrame]] = [:] // objectId → frames
+    private var knownObjectIds: Set<String> = []
+    private var highConfidenceObjectIds: Set<String> = []
+
+    // MARK: public read
+
+    /// Snapshot of general time-sampled frames. Safe to call from any queue.
     func snapshot() -> [CapturedFrame] {
         queue.sync { frames }
+    }
+
+    /// Snapshot of per-object burst frames. Safe to call from any queue.
+    func snapshotObjectFrames() -> [String: [CapturedFrame]] {
+        queue.sync { objectFrames }
     }
 
     func reset() {
         queue.sync {
             frames.removeAll()
+            objectFrames.removeAll()
+            activeBursts.removeAll()
+            knownObjectIds.removeAll()
+            highConfidenceObjectIds.removeAll()
             lastSampleTime = 0
             nextFrameNumber = 0
+        }
+    }
+
+    // MARK: RoomPlan integration
+
+    /// Call from `RoomCaptureSessionDelegate.captureSession(_:didUpdate:)` on
+    /// every incremental room update. Thread-safe; can be called from any queue.
+    func processRoomUpdate(_ room: CapturedRoom) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            for obj in room.objects {
+                let id = obj.identifier.uuidString
+                if !self.knownObjectIds.contains(id) {
+                    self.knownObjectIds.insert(id)
+                    self.activeBursts[id] = self.burstCountOnDetect
+                } else if obj.confidence == .high, !self.highConfidenceObjectIds.contains(id) {
+                    self.highConfidenceObjectIds.insert(id)
+                    // Top up only if currently collecting fewer frames than the upgrade burst.
+                    self.activeBursts[id] = max(
+                        self.activeBursts[id, default: 0],
+                        self.burstCountOnHighConf
+                    )
+                }
+            }
         }
     }
 
@@ -59,33 +117,59 @@ final class FrameSampler: NSObject, ARSessionDelegate {
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         let now = frame.timestamp
-        let interval = 1.0 / targetFPS
-        if now - lastSampleTime < interval { return }
-        lastSampleTime = now
-
-        // Hop off ARKit's delegate queue — JPEG encoding can take a few ms.
         let pixelBuffer = frame.capturedImage
         let intrinsics = frame.camera.intrinsics
         let transform = frame.camera.transform
 
+        // All throttle / burst state lives on `queue` — dispatch everything there
+        // so we never race on lastSampleTime or activeBursts.
         queue.async { [weak self] in
             guard let self else { return }
+
+            let hasBursts = !self.activeBursts.isEmpty
+            let interval = 1.0 / self.targetFPS
+            let shouldSampleRegular = now - self.lastSampleTime >= interval
+
+            guard shouldSampleRegular || hasBursts else { return }
+
             guard let captured = self.makeCapturedFrame(
                 pixelBuffer: pixelBuffer,
                 cameraTransform: transform,
                 cameraIntrinsics: intrinsics,
                 timestamp: now
             ) else { return }
-            self.append(captured)
+
+            if shouldSampleRegular {
+                self.lastSampleTime = now
+                self.appendGeneral(captured)
+            }
+
+            if hasBursts {
+                self.drainBursts(with: captured)
+            }
         }
     }
 
     // MARK: helpers
 
-    private func append(_ frame: CapturedFrame) {
+    private func appendGeneral(_ frame: CapturedFrame) {
         frames.append(frame)
         if frames.count > maxFrames {
             frames.removeFirst(frames.count - maxFrames)
+        }
+    }
+
+    private func drainBursts(with frame: CapturedFrame) {
+        var completed: [String] = []
+        for objectId in activeBursts.keys {
+            objectFrames[objectId, default: []].append(frame)
+            activeBursts[objectId]! -= 1
+            if activeBursts[objectId]! <= 0 {
+                completed.append(objectId)
+            }
+        }
+        for id in completed {
+            activeBursts.removeValue(forKey: id)
         }
     }
 

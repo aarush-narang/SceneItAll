@@ -17,7 +17,15 @@ enum ScanPayloadBuilder {
 
     /// Encode the scan body. `objects` from RoomPlan are mapped to the backend's
     /// `DetectedObject` shape (column-major flat-16 transform).
-    static func encodeScanJSON(_ room: CapturedRoom) throws -> Data {
+    ///
+    /// - Parameter objectFrameIds: Optional map from object UUID string to the
+    ///   list of frame IDs captured specifically for that object during the scan.
+    ///   When present, the backend uses only those frames instead of searching
+    ///   the entire general frame pool.
+    static func encodeScanJSON(
+        _ room: CapturedRoom,
+        objectFrameIds: [String: [String]] = [:]
+    ) throws -> Data {
         let payload = ScanPayloadJSON(
             identifier: room.identifier.uuidString,
             story: storyValue(of: room),
@@ -28,7 +36,9 @@ enum ScanPayloadBuilder {
             openings: surfaceJSON(room.openings),
             floors: floorJSON(room),
             sections: sectionJSON(room),
-            detectedObjects: room.objects.map(detectedObjectJSON(from:))
+            detectedObjects: room.objects.map { o in
+                detectedObjectJSON(from: o, frameIds: objectFrameIds[o.identifier.uuidString] ?? [])
+            }
         )
 
         let encoder = JSONEncoder()
@@ -88,8 +98,14 @@ enum ScanPayloadBuilder {
         let identifier: String
         let category: String
         let dimensions: [Float]
-        let transform: [Float]   // column-major flat-16
+        let transform: [Float]        // column-major flat-16
         let confidence: String
+        let objectFrameIds: [String]  // targeted burst frames for this object; empty = use general pool
+
+        enum CodingKeys: String, CodingKey {
+            case identifier, category, dimensions, transform, confidence
+            case objectFrameIds = "object_frame_ids"
+        }
     }
 
     private struct FrameMetadataJSON: Encodable {
@@ -126,13 +142,17 @@ enum ScanPayloadBuilder {
         }
     }
 
-    private static func detectedObjectJSON(from o: CapturedRoom.Object) -> DetectedObjectJSON {
+    private static func detectedObjectJSON(
+        from o: CapturedRoom.Object,
+        frameIds: [String] = []
+    ) -> DetectedObjectJSON {
         DetectedObjectJSON(
             identifier: o.identifier.uuidString,
             category: objectCategoryString(o.category),
             dimensions: [o.dimensions.x, o.dimensions.y, o.dimensions.z],
             transform: columnMajorFlat16(o.transform),
-            confidence: confidenceString(o.confidence)
+            confidence: confidenceString(o.confidence),
+            objectFrameIds: frameIds
         )
     }
 

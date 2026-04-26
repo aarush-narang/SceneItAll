@@ -75,11 +75,12 @@ final class ScanMatchingViewModel: ObservableObject {
             return
         }
         let frames = ScanResultHolder.shared.frames
+        let objectFrames = ScanResultHolder.shared.objectFrames
 
         do {
             statusMessage = "Uploading scan…"
             detailMessage = "Sending room data to the matcher"
-            let matchedScene = try await uploadClient.upload(room: room, frames: frames)
+            let matchedScene = try await uploadClient.upload(room: room, frames: frames, objectFrames: objectFrames)
 
             statusMessage = "Building room…"
             detailMessage = "Downloading furniture models"
