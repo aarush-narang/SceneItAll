@@ -7,15 +7,8 @@ struct DesignSummary: Identifiable {
     let name: String
     let roomType: String
     let furnitureCount: Int
-    let updatedAt: Date
+    let createdAt: Date
     let accentColor: Color
-
-    static let samples: [DesignSummary] = [
-        .init(id: "1", name: "Living Room", roomType: "living", furnitureCount: 6, updatedAt: .now.addingTimeInterval(-3600), accentColor: .blue),
-        .init(id: "2", name: "Master Bedroom", roomType: "bedroom", furnitureCount: 4, updatedAt: .now.addingTimeInterval(-86400), accentColor: .purple),
-        .init(id: "3", name: "Home Office", roomType: "office", furnitureCount: 3, updatedAt: .now.addingTimeInterval(-172800), accentColor: .green),
-        .init(id: "4", name: "Guest Room", roomType: "bedroom", furnitureCount: 2, updatedAt: .now.addingTimeInterval(-604800), accentColor: .orange),
-    ]
 }
 
 enum RoomImportMode {
@@ -24,8 +17,9 @@ enum RoomImportMode {
 }
 
 final class DesignsListViewModel: ObservableObject {
-    @Published var designs: [DesignSummary] = DesignSummary.samples
+    @Published var designs: [DesignSummary] = []
     @Published var searchText = ""
+    @Published var isLoadingDesigns = false
     @Published var isShowingNewDesignSheet = false
     @Published var isShowingScan = false
     @Published var isShowingImporter = false
@@ -39,9 +33,13 @@ final class DesignsListViewModel: ObservableObject {
     @Published var importedFileName = ""
     @Published var importErrorMessage = ""
     @Published var isShowingImportError = false
+    @Published var designsLoadErrorMessage = ""
+    @Published var isShowingDesignsLoadError = false
     @Published var isSavingStylePreferences = false
     @Published var stylePreferencesErrorMessage = ""
     @Published var isShowingStylePreferencesError = false
+
+    private var hasLoadedDesigns = false
 
     var filteredDesigns: [DesignSummary] {
         if searchText.isEmpty { return designs }
@@ -50,6 +48,36 @@ final class DesignsListViewModel: ObservableObject {
 
     var currentStyleQuizResult: StyleQuizResult {
         StyleQuizResult.fromUserDefaults()
+    }
+
+    @MainActor
+    func loadDesignsIfNeeded() async {
+        guard !hasLoadedDesigns else { return }
+        await loadDesigns()
+    }
+
+    @MainActor
+    func loadDesigns() async {
+        isLoadingDesigns = true
+        isShowingDesignsLoadError = false
+        designsLoadErrorMessage = ""
+
+        do {
+            let remoteDesigns = try await FurnitureAPIClient.shared.listDesigns(userID: UserSession.shared.userID)
+            designs = remoteDesigns.map(DesignSummary.init(remoteDesign:))
+            hasLoadedDesigns = true
+            isLoadingDesigns = false
+        } catch {
+            if error.isCancellationError {
+                isLoadingDesigns = false
+                return
+            }
+
+            designs = []
+            isLoadingDesigns = false
+            designsLoadErrorMessage = error.localizedDescription
+            isShowingDesignsLoadError = true
+        }
     }
 
     @MainActor
@@ -121,5 +149,42 @@ final class DesignsListViewModel: ObservableObject {
             importErrorMessage = error.localizedDescription
             isShowingImportError = true
         }
+    }
+}
+
+private extension DesignSummary {
+    init(remoteDesign: RemoteDesign) {
+        id = remoteDesign.id
+        name = remoteDesign.name
+        roomType = remoteDesign.shell.room.type
+        furnitureCount = remoteDesign.objects.count
+        createdAt = remoteDesign.createdAt
+        accentColor = Self.accentColor(for: remoteDesign)
+    }
+
+    static func accentColor(for remoteDesign: RemoteDesign) -> Color {
+        let colors: [Color] = [.blue, .green, .orange, .pink, .teal, .indigo]
+        let index = abs(remoteDesign.id.hashValue) % colors.count
+        return colors[index]
+    }
+}
+
+private extension Error {
+    var isCancellationError: Bool {
+        if self is CancellationError {
+            return true
+        }
+
+        if let urlError = self as? URLError, urlError.code == .cancelled {
+            return true
+        }
+
+        if let clientError = self as? FurnitureAPIClientError,
+           case let FurnitureAPIClientError.transportError(_, underlying) = clientError,
+           underlying.code == .cancelled {
+            return true
+        }
+
+        return false
     }
 }

@@ -47,6 +47,30 @@ final class FurnitureAPIClient {
         return try await sendRequest(url: url)
     }
 
+    func listDesigns(userID: String? = nil) async throws -> [RemoteDesign] {
+        let resolvedUserID = userID ?? Self.defaultUserID()
+        var components = URLComponents(
+            url: baseURL.appending(path: "/designs"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "user_id", value: resolvedUserID),
+            URLQueryItem(name: "_ts", value: String(Int(Date().timeIntervalSince1970 * 1000)))
+        ]
+
+        guard let url = components?.url else {
+            throw FurnitureAPIClientError.invalidRequest
+        }
+
+        return try await sendRequest(
+            url: url,
+            additionalHeaders: [
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache"
+            ]
+        )
+    }
+
     func addObjectToDesign(
         _ object: PlacedFurnitureObject,
         designID: String? = nil,
@@ -117,10 +141,14 @@ final class FurnitureAPIClient {
         try await sendRequest(url: url, method: "PUT", body: preferences)
     }
 
-    private func sendRequest<T: Decodable>(url: URL) async throws -> T {
+    private func sendRequest<T: Decodable>(url: URL, additionalHeaders: [String: String] = [:]) async throws -> T {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        additionalHeaders.forEach { field, value in
+            request.setValue(value, forHTTPHeaderField: field)
+        }
 
         let data: Data
         let response: URLResponse
@@ -407,6 +435,113 @@ struct PreferenceProfileUpsert: Encodable {
         case philosophies
         case hardRequirements = "hard_requirements"
     }
+}
+
+struct RemoteDesign: Decodable {
+    let id: String
+    let userID: String
+    let name: String
+    let preferenceProfileID: String?
+    let shell: RemoteRoomShell
+    let objects: [PlacedFurnitureObject]
+    let createdAt: Date
+    let updatedAt: Date
+    let deletedAt: Date?
+ 
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userID = "user_id"
+        case name
+        case preferenceProfileID = "preference_profile_id"
+        case shell
+        case objects
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case deletedAt = "deleted_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        userID = try container.decode(String.self, forKey: .userID)
+        name = try container.decode(String.self, forKey: .name)
+        preferenceProfileID = try container.decodeIfPresent(String.self, forKey: .preferenceProfileID)
+        shell = try container.decode(RemoteRoomShell.self, forKey: .shell)
+        objects = try container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects) ?? []
+        createdAt = try Self.decodeDate(forKey: .createdAt, from: container)
+        updatedAt = try Self.decodeDate(forKey: .updatedAt, from: container)
+        deletedAt = try Self.decodeOptionalDate(forKey: .deletedAt, from: container)
+    }
+
+    private static func decodeDate(
+        forKey key: CodingKeys,
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> Date {
+        let value = try container.decode(String.self, forKey: key)
+        if let parsedDate = parseDate(value) {
+            return parsedDate
+        }
+
+        throw DecodingError.dataCorruptedError(
+            forKey: key,
+            in: container,
+            debugDescription: "Expected ISO 8601 date string for \(key.stringValue), got \(value)"
+        )
+    }
+
+    private static func decodeOptionalDate(
+        forKey key: CodingKeys,
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) throws -> Date? {
+        guard let value = try container.decodeIfPresent(String.self, forKey: key) else {
+            return nil
+        }
+
+        guard let parsedDate = parseDate(value) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: key,
+                in: container,
+                debugDescription: "Expected ISO 8601 date string for \(key.stringValue), got \(value)"
+            )
+        }
+
+        return parsedDate
+    }
+
+    private static func parseDate(_ value: String) -> Date? {
+        fractionalSecondsDateFormatter.date(from: value)
+            ?? internetDateTimeFormatter.date(from: value)
+            ?? malformedUTCDateFormatter.date(from: value)
+    }
+
+    private static let fractionalSecondsDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let internetDateTimeFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static let malformedUTCDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSS"
+        return formatter
+    }()
+}
+
+struct RemoteRoomShell: Decodable {
+    let room: RemoteRoom
+}
+
+struct RemoteRoom: Decodable {
+    let type: String
 }
 
 extension FurnitureAPIClient {
