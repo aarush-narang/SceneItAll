@@ -3,3 +3,4 @@
 __pycache__
 *.pyc
 *.pbxproj
+backend/openapi.json
