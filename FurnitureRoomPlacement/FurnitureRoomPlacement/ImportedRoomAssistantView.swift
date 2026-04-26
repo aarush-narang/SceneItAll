@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct ImportedRoomAssistantRequest {
     let prompt: String
@@ -27,13 +28,18 @@ struct ImportedRoomAssistantOverlay: View {
     let onPlacementCleanup: () -> Void
     let onAcceptPlacementChanges: () -> Void
     let onDeclinePlacementChanges: () -> Void
+    @State private var keyboardHeight: CGFloat = 0
+    @FocusState private var isInputFocused: Bool
 
     var body: some View {
-        HStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 12) {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottomLeading) {
                 if isPresented {
                     chatPanel
+                        .offset(y: chatPanelVerticalOffset(for: proxy.safeAreaInsets.bottom) - 64)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .animation(.easeOut(duration: 0.25), value: keyboardHeight)
+                        .animation(.easeOut(duration: 0.25), value: isInputFocused)
                 }
 
                 HStack(spacing: 12) {
@@ -41,14 +47,16 @@ struct ImportedRoomAssistantOverlay: View {
                     cleanupButton
                 }
             }
-            Spacer(minLength: 0)
-
-            if hasPendingPlacementPreview {
-                placementDecisionPanel
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .overlay(alignment: .bottomTrailing) {
+                if hasPendingPlacementPreview {
+                    placementDecisionPanel
+                }
             }
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isPresented)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: hasPendingPlacementPreview)
+        .onReceive(keyboardHeightPublisher) { keyboardHeight = $0 }
     }
 
     // MARK: - Agent Button
@@ -166,6 +174,7 @@ struct ImportedRoomAssistantOverlay: View {
                     .padding(.vertical, 10)
                     .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
                     .disabled(isBusy)
+                    .focused($isInputFocused)
 
                 Button(action: onSend) {
                     Group {
@@ -237,6 +246,29 @@ struct ImportedRoomAssistantOverlay: View {
 
     private var isBusy: Bool {
         isChatLoading || isCleanupLoading
+    }
+
+    private func chatPanelVerticalOffset(for safeAreaBottom: CGFloat) -> CGFloat {
+        guard isInputFocused else { return 0 }
+        return -max(0, keyboardHeight - safeAreaBottom)
+    }
+
+    private var keyboardHeightPublisher: AnyPublisher<CGFloat, Never> {
+        let willShow = NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
+            .merge(with: NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification))
+            .compactMap { notification -> CGFloat? in
+                guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
+                    return nil
+                }
+                return frame.height
+            }
+            .eraseToAnyPublisher()
+
+        let willHide = NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+            .map { _ in CGFloat.zero }
+            .eraseToAnyPublisher()
+
+        return willShow.merge(with: willHide).eraseToAnyPublisher()
     }
 }
 
