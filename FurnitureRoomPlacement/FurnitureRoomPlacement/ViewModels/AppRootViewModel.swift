@@ -4,6 +4,9 @@ import Combine
 final class AppRootViewModel: ObservableObject {
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
     @AppStorage("hasCompletedStyleQuiz") var hasCompletedStyleQuiz = false
+    @Published var isSavingStyleQuiz = false
+    @Published var styleQuizSaveErrorMessage = ""
+    @Published var isShowingStyleQuizSaveError = false
 
     func completeOnboarding() {
         withAnimation {
@@ -17,8 +20,41 @@ final class AppRootViewModel: ObservableObject {
         UserDefaults.standard.set(result.materialPreferences, forKey: "pref_materials")
         UserDefaults.standard.set(result.spatialDensity, forKey: "pref_density")
         UserDefaults.standard.set(result.philosophies, forKey: "pref_philosophies")
-        withAnimation {
-            hasCompletedStyleQuiz = true
+
+        Task {
+            await MainActor.run {
+                isSavingStyleQuiz = true
+                isShowingStyleQuizSaveError = false
+                styleQuizSaveErrorMessage = ""
+            }
+
+            let preferences = PreferenceProfileUpsert(
+                styleTags: result.styleTags,
+                colorPalette: result.colorPalette,
+                materialPreferences: result.materialPreferences,
+                spatialDensity: result.spatialDensity,
+                philosophies: result.philosophies,
+                hardRequirements: [:]
+            )
+
+            do {
+                try await FurnitureAPIClient.shared.upsertPreferences(
+                    preferences,
+                    userID: UserSession.shared.userID
+                )
+                await MainActor.run {
+                    isSavingStyleQuiz = false
+                    withAnimation {
+                        hasCompletedStyleQuiz = true
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    isSavingStyleQuiz = false
+                    styleQuizSaveErrorMessage = error.localizedDescription
+                    isShowingStyleQuizSaveError = true
+                }
+            }
         }
     }
 }

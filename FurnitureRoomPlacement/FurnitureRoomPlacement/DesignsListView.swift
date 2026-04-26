@@ -2,14 +2,19 @@ import SwiftUI
 import SceneKit
 import RoomPlan
 import UniformTypeIdentifiers
+import UIKit
 
 struct DesignsListView: View {
     @StateObject private var viewModel = DesignsListViewModel()
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                if viewModel.designs.isEmpty {
+            RefreshableScrollView {
+                await viewModel.loadDesigns()
+            } content: {
+                if viewModel.isLoadingDesigns && viewModel.designs.isEmpty {
+                    loadingState
+                } else if viewModel.designs.isEmpty {
                     emptyState
                 } else {
                     designsGrid
@@ -18,6 +23,9 @@ struct DesignsListView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("My Designs")
             .searchable(text: $viewModel.searchText, prompt: "Search designs")
+            .task {
+                await viewModel.loadDesignsIfNeeded()
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -91,7 +99,12 @@ struct DesignsListView: View {
                 .presentationDetents([.medium])
             }
             .sheet(isPresented: $viewModel.isShowingStyleQuiz) {
-                StyleQuizView { _ in viewModel.isShowingStyleQuiz = false }
+                StyleQuizView(
+                    initialResult: viewModel.currentStyleQuizResult,
+                    showsSkipButton: false
+                ) { result in
+                    Task { await viewModel.handleStyleQuizCompletion(result) }
+                }
             }
             .fileImporter(
                 isPresented: $viewModel.isShowingImporter,
@@ -105,10 +118,49 @@ struct DesignsListView: View {
             } message: {
                 Text(viewModel.importErrorMessage)
             }
+            .alert("Couldn't Load Designs", isPresented: $viewModel.isShowingDesignsLoadError) {
+                Button("Retry") {
+                    Task { await viewModel.loadDesigns() }
+                }
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(viewModel.designsLoadErrorMessage)
+            }
+            .alert("Couldn't Save Preferences", isPresented: $viewModel.isShowingStylePreferencesError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(viewModel.stylePreferencesErrorMessage)
+            }
+            .overlay {
+                if viewModel.isSavingStylePreferences {
+                    ZStack {
+                        Color.black.opacity(0.2)
+                            .ignoresSafeArea()
+
+                        ProgressView("Saving your preferences...")
+                            .padding(20)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
+            }
         }
     }
 
     // MARK: - Empty State
+
+    private var loadingState: some View {
+        VStack(spacing: 16) {
+            Spacer().frame(height: 120)
+
+            ProgressView()
+                .controlSize(.large)
+
+            Text("Loading your designs...")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
 
     private var emptyState: some View {
         VStack(spacing: 20) {
@@ -156,6 +208,72 @@ struct DesignsListView: View {
     }
 }
 
+private struct RefreshableScrollView<Content: View>: UIViewRepresentable {
+    let onRefresh: @Sendable () async -> Void
+    let content: Content
+
+    init(
+        onRefresh: @escaping @Sendable () async -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.onRefresh = onRefresh
+        self.content = content()
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onRefresh: onRefresh, rootView: content)
+    }
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.alwaysBounceVertical = true
+        scrollView.backgroundColor = UIColor.systemGroupedBackground
+
+        let refreshControl = UIRefreshControl()
+        refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh), for: .valueChanged)
+        scrollView.refreshControl = refreshControl
+
+        let hostedView = context.coordinator.hostingController.view!
+        hostedView.translatesAutoresizingMaskIntoConstraints = false
+        hostedView.backgroundColor = UIColor.clear
+
+        scrollView.addSubview(hostedView)
+
+        NSLayoutConstraint.activate([
+            hostedView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            hostedView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            hostedView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            hostedView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            hostedView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor)
+        ])
+
+        return scrollView
+    }
+
+    func updateUIView(_ uiView: UIScrollView, context: Context) {
+        context.coordinator.hostingController.rootView = content
+    }
+
+    final class Coordinator: NSObject {
+        let hostingController: UIHostingController<Content>
+        private let onRefresh: @Sendable () async -> Void
+
+        init(onRefresh: @escaping @Sendable () async -> Void, rootView: Content) {
+            self.onRefresh = onRefresh
+            self.hostingController = UIHostingController(rootView: rootView)
+        }
+
+        @objc func handleRefresh(_ sender: UIRefreshControl) {
+            Task {
+                await onRefresh()
+                await MainActor.run {
+                    sender.endRefreshing()
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Design Card
 
 private struct DesignCard: View {
@@ -189,7 +307,7 @@ private struct DesignCard: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
 
-                Text(design.updatedAt, style: .relative)
+                Text(design.createdAt, style: .relative)
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }

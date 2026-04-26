@@ -22,5 +22,22 @@ struct ContentView: View {
         }
         .animation(.easeInOut(duration: 0.35), value: rootViewModel.hasCompletedOnboarding)
         .animation(.easeInOut(duration: 0.35), value: rootViewModel.hasCompletedStyleQuiz)
+        .overlay {
+            if rootViewModel.isSavingStyleQuiz {
+                ZStack {
+                    Color.black.opacity(0.2)
+                        .ignoresSafeArea()
+
+                    ProgressView("Saving your preferences...")
+                        .padding(20)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
+        }
+        .alert("Couldn't Save Preferences", isPresented: $rootViewModel.isShowingStyleQuizSaveError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(rootViewModel.styleQuizSaveErrorMessage)
+        }
     }
 }

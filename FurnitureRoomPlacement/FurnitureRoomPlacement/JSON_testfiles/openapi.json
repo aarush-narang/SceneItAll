@@ -1,0 +1,2643 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Interior Design LiDAR API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/furniture/search": {
+      "get": {
+        "tags": [
+          "furniture"
+        ],
+        "summary": "Search Furniture",
+        "operationId": "search_furniture_furniture_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Free-text search query",
+              "title": "Q"
+            },
+            "description": "Free-text search query"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "max_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Price"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurnitureItemPublic"
+                  },
+                  "title": "Response Search Furniture Furniture Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/furniture/similar": {
+      "get": {
+        "tags": [
+          "furniture"
+        ],
+        "summary": "Similar Furniture",
+        "operationId": "similar_furniture_furniture_similar_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "max_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Price"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FurnitureItemPublic"
+                  },
+                  "title": "Response Similar Furniture Furniture Similar Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/furniture/{id}": {
+      "get": {
+        "tags": [
+          "furniture"
+        ],
+        "summary": "Get Furniture",
+        "operationId": "get_furniture_furniture__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FurnitureItemPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/designs": {
+      "get": {
+        "tags": [
+          "designs"
+        ],
+        "summary": "List Designs",
+        "operationId": "list_designs_designs_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DesignPublic"
+                  },
+                  "title": "Response List Designs Designs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "designs"
+        ],
+        "summary": "Create Design",
+        "operationId": "create_design_designs_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/designs/{id}": {
+      "get": {
+        "tags": [
+          "designs"
+        ],
+        "summary": "Get Design",
+        "operationId": "get_design_designs__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "designs"
+        ],
+        "summary": "Patch Design",
+        "operationId": "patch_design_designs__id__patch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesignPatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesignPublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "designs"
+        ],
+        "summary": "Delete Design",
+        "operationId": "delete_design_designs__id__delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/designs/{id}/objects": {
+      "get": {
+        "tags": [
+          "designs"
+        ],
+        "summary": "List Design Objects",
+        "operationId": "list_design_objects_designs__id__objects_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PlacedObject-Output"
+                  },
+                  "title": "Response List Design Objects Designs  Id  Objects Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/preferences/{user_id}": {
+      "get": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Get Preferences",
+        "operationId": "get_preferences_preferences__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferenceProfilePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Upsert Preferences",
+        "operationId": "upsert_preferences_preferences__user_id__put",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferenceProfileUpsert"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferenceProfilePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/preferences/extract": {
+      "post": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Extract Preferences",
+        "operationId": "extract_preferences_preferences_extract_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_extract_preferences_preferences_extract_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferenceProfilePublic"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/chat": {
+      "post": {
+        "tags": [
+          "agent"
+        ],
+        "summary": "Agent Chat",
+        "operationId": "agent_chat_agent_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/scans": {
+      "post": {
+        "tags": [
+          "scans"
+        ],
+        "summary": "Create Scan",
+        "operationId": "create_scan_v1_scans_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentChatRequest": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "design_id": {
+            "type": "string",
+            "title": "Design Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "design_id",
+          "message"
+        ],
+        "title": "AgentChatRequest"
+      },
+      "AgentChatResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "assistant_text": {
+            "type": "string",
+            "title": "Assistant Text"
+          },
+          "mutations": {
+            "$ref": "#/components/schemas/Mutations"
+          },
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/Recommendation"
+            },
+            "type": "array",
+            "title": "Recommendations"
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCallLog"
+            },
+            "type": "array",
+            "title": "Tool Calls"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "assistant_text"
+        ],
+        "title": "AgentChatResponse"
+      },
+      "Body_extract_preferences_preferences_extract_post": {
+        "properties": {
+          "design_id": {
+            "type": "string",
+            "title": "Design Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "design_id",
+          "user_id"
+        ],
+        "title": "Body_extract_preferences_preferences_extract_post"
+      },
+      "BoundingBoxDimensions": {
+        "properties": {
+          "width_m": {
+            "type": "number",
+            "title": "Width M"
+          },
+          "height_m": {
+            "type": "number",
+            "title": "Height M"
+          },
+          "depth_m": {
+            "type": "number",
+            "title": "Depth M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width_m",
+          "height_m",
+          "depth_m"
+        ],
+        "title": "BoundingBoxDimensions"
+      },
+      "CaptureMetadata": {
+        "properties": {
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generatedat"
+          },
+          "sourceVersion": {
+            "type": "integer",
+            "title": "Sourceversion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generatedAt",
+          "sourceVersion"
+        ],
+        "title": "CaptureMetadata"
+      },
+      "DesignCreateRequest": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "shell": {
+            "$ref": "#/components/schemas/RoomShell"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/PlacedObject-Input"
+            },
+            "type": "array",
+            "title": "Objects"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "name",
+          "shell"
+        ],
+        "title": "DesignCreateRequest",
+        "description": "Payload for POST /designs. `shell` + `objects` are the raw RoomPlan capture."
+      },
+      "DesignPatchRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "preference_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Profile Id"
+          },
+          "add_items": {
+            "items": {
+              "$ref": "#/components/schemas/PlacedObject-Input"
+            },
+            "type": "array",
+            "title": "Add Items"
+          },
+          "update_items": {
+            "items": {
+              "$ref": "#/components/schemas/PlacedObject-Input"
+            },
+            "type": "array",
+            "title": "Update Items"
+          },
+          "delete_instance_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Delete Instance Ids"
+          }
+        },
+        "type": "object",
+        "title": "DesignPatchRequest"
+      },
+      "DesignPublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "preference_profile_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preference Profile Id"
+          },
+          "shell": {
+            "$ref": "#/components/schemas/RoomShell"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/PlacedObject-Output"
+            },
+            "type": "array",
+            "title": "Objects"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "name",
+          "shell",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DesignPublic",
+        "description": "API-facing design document with `_id` normalised to `id`."
+      },
+      "EmbeddingValue": {
+        "properties": {
+          "vec": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Vec"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "dim": {
+            "type": "integer",
+            "title": "Dim"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "dim"
+        ],
+        "title": "EmbeddingValue"
+      },
+      "FurnitureAttributes": {
+        "properties": {
+          "style_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Style Tags"
+          },
+          "design_lineage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Design Lineage"
+          },
+          "material_primary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Primary"
+          },
+          "material_secondary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Secondary"
+          },
+          "texture_and_finish": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Texture And Finish"
+          },
+          "color_primary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Primary"
+          },
+          "color_secondary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Secondary"
+          },
+          "era": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Era"
+          },
+          "formality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formality"
+          },
+          "ambient_mood": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ambient Mood"
+          },
+          "visual_weight": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Weight"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          },
+          "room_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Role"
+          },
+          "suitable_rooms": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suitable Rooms"
+          },
+          "placement_hints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Placement Hints"
+          },
+          "pairs_well_with": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pairs Well With"
+          },
+          "use_scenarios": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Use Scenarios"
+          },
+          "space_requirements": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Space Requirements"
+          },
+          "has_arms": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Arms"
+          },
+          "has_legs": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has Legs"
+          },
+          "stackable": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stackable"
+          }
+        },
+        "type": "object",
+        "title": "FurnitureAttributes"
+      },
+      "FurnitureBoundingBox": {
+        "properties": {
+          "width_m": {
+            "type": "number",
+            "title": "Width M"
+          },
+          "height_m": {
+            "type": "number",
+            "title": "Height M"
+          },
+          "depth_m": {
+            "type": "number",
+            "title": "Depth M"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width_m",
+          "height_m",
+          "depth_m"
+        ],
+        "title": "FurnitureBoundingBox"
+      },
+      "FurnitureEmbeddings": {
+        "properties": {
+          "text": {
+            "$ref": "#/components/schemas/EmbeddingValue"
+          },
+          "visual": {
+            "$ref": "#/components/schemas/EmbeddingValue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "visual"
+        ],
+        "title": "FurnitureEmbeddings"
+      },
+      "FurnitureFiles-Input": {
+        "properties": {
+          "usdz_url": {
+            "type": "string",
+            "title": "Usdz Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "usdz_url"
+        ],
+        "title": "FurnitureFiles"
+      },
+      "FurnitureItemPublic": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "family_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Key"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FurnitureSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "taxonomy_ikea": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IkeaTaxonomy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "taxonomy_inferred": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InferredTaxonomy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "price": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PriceInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RatingInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dimensions_ikea": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IkeaDimensions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dimensions_bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BoundingBoxDimensions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attributes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FurnitureAttributes"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "design_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Design Summary"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "embedding_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Text"
+          },
+          "embeddings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FurnitureEmbeddings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/app__models__furniture__FurnitureFiles"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "FurnitureItemPublic",
+        "description": "API-facing furniture document with `_id` normalized to `id` and embeddings stripped."
+      },
+      "FurnitureSnapshot-Input": {
+        "properties": {
+          "_id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "family_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Key"
+          },
+          "dimensions_bbox": {
+            "$ref": "#/components/schemas/FurnitureBoundingBox"
+          },
+          "files": {
+            "$ref": "#/components/schemas/FurnitureFiles-Input"
+          }
+        },
+        "type": "object",
+        "required": [
+          "_id",
+          "name",
+          "dimensions_bbox",
+          "files"
+        ],
+        "title": "FurnitureSnapshot",
+        "description": "Catalog snapshot embedded in a placement so the iOS client can render\nwithout re-fetching catalog rows. `id` references the full FurnitureItem."
+      },
+      "FurnitureSnapshot-Output": {
+        "properties": {
+          "_id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "family_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Key"
+          },
+          "dimensions_bbox": {
+            "$ref": "#/components/schemas/FurnitureBoundingBox"
+          },
+          "files": {
+            "$ref": "#/components/schemas/app__models__design__FurnitureFiles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "_id",
+          "name",
+          "dimensions_bbox",
+          "files"
+        ],
+        "title": "FurnitureSnapshot",
+        "description": "Catalog snapshot embedded in a placement so the iOS client can render\nwithout re-fetching catalog rows. `id` references the full FurnitureItem."
+      },
+      "FurnitureSource": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "url"
+        ],
+        "title": "FurnitureSource"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IkeaDimensions": {
+        "properties": {
+          "width_in": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width In"
+          },
+          "depth_in": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth In"
+          },
+          "height_in": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height In"
+          }
+        },
+        "type": "object",
+        "title": "IkeaDimensions"
+      },
+      "IkeaTaxonomy": {
+        "properties": {
+          "category_leaf": {
+            "type": "string",
+            "title": "Category Leaf"
+          },
+          "category_path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Category Path"
+          },
+          "segment": {
+            "type": "string",
+            "title": "Segment"
+          },
+          "top_department": {
+            "type": "string",
+            "title": "Top Department"
+          },
+          "material": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_leaf",
+          "segment",
+          "top_department"
+        ],
+        "title": "IkeaTaxonomy"
+      },
+      "InferredTaxonomy": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "subcategory": {
+            "type": "string",
+            "title": "Subcategory"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "subcategory"
+        ],
+        "title": "InferredTaxonomy"
+      },
+      "MatchedObject": {
+        "properties": {
+          "detected_id": {
+            "type": "string",
+            "title": "Detected Id"
+          },
+          "matched_product_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Product Id"
+          },
+          "matched_product_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Product Name"
+          },
+          "matched_usdz_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Usdz Url"
+          },
+          "refined_category": {
+            "type": "string",
+            "title": "Refined Category"
+          },
+          "transform": {
+            "$ref": "#/components/schemas/ObjectTransform"
+          },
+          "original_bbox": {
+            "$ref": "#/components/schemas/OriginalBBox"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detected_id",
+          "refined_category",
+          "transform",
+          "original_bbox"
+        ],
+        "title": "MatchedObject",
+        "description": "Per-object result returned by the matching pipeline."
+      },
+      "Mutations": {
+        "properties": {
+          "placements_added": {
+            "items": {
+              "$ref": "#/components/schemas/PlacedObject-Output"
+            },
+            "type": "array",
+            "title": "Placements Added"
+          },
+          "placements_removed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Placements Removed"
+          },
+          "placements_moved": {
+            "items": {
+              "$ref": "#/components/schemas/PlacedObject-Output"
+            },
+            "type": "array",
+            "title": "Placements Moved"
+          }
+        },
+        "type": "object",
+        "title": "Mutations",
+        "description": "Concrete changes the agent applied to the design during this turn.\nEmpty when the turn was purely passive (recommendations only)."
+      },
+      "ObjectTransform": {
+        "properties": {
+          "position": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Position"
+          },
+          "rotation_euler": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Rotation Euler"
+          },
+          "scale": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Scale",
+            "default": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "rotation_euler"
+        ],
+        "title": "ObjectTransform"
+      },
+      "Opening": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "door",
+              "window",
+              "opening"
+            ],
+            "title": "Type"
+          },
+          "wallID": {
+            "type": "string",
+            "title": "Wallid"
+          },
+          "center": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Center"
+          },
+          "width": {
+            "type": "number",
+            "title": "Width"
+          },
+          "height": {
+            "type": "number",
+            "title": "Height"
+          },
+          "bottomHeight": {
+            "type": "number",
+            "title": "Bottomheight"
+          },
+          "rotationRadians": {
+            "type": "number",
+            "title": "Rotationradians"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "isOpen": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isopen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "wallID",
+          "center",
+          "width",
+          "height",
+          "bottomHeight",
+          "rotationRadians",
+          "confidence"
+        ],
+        "title": "Opening",
+        "description": "A door, window, or open passageway. `bottom_height` is the sill height\nabove the floor; `is_open` is only set on doors."
+      },
+      "OriginalBBox": {
+        "properties": {
+          "dimensions": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Dimensions"
+          },
+          "transform": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Transform"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dimensions",
+          "transform"
+        ],
+        "title": "OriginalBBox"
+      },
+      "PlacedObject-Input": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "furniture": {
+            "$ref": "#/components/schemas/FurnitureSnapshot-Input"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/Placement"
+          },
+          "addedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Addedat"
+          },
+          "placed_by": {
+            "type": "string",
+            "enum": [
+              "user",
+              "agent"
+            ],
+            "title": "Placed By",
+            "default": "user"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "furniture",
+          "placement",
+          "addedAt"
+        ],
+        "title": "PlacedObject",
+        "description": "A single piece of furniture placed in the design. `id` is a per-instance\nUUID \u2014 it allows multiple copies of the same SKU in one room."
+      },
+      "PlacedObject-Output": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "furniture": {
+            "$ref": "#/components/schemas/FurnitureSnapshot-Output"
+          },
+          "placement": {
+            "$ref": "#/components/schemas/Placement"
+          },
+          "addedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Addedat"
+          },
+          "placed_by": {
+            "type": "string",
+            "enum": [
+              "user",
+              "agent"
+            ],
+            "title": "Placed By",
+            "default": "user"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "furniture",
+          "placement",
+          "addedAt"
+        ],
+        "title": "PlacedObject",
+        "description": "A single piece of furniture placed in the design. `id` is a per-instance\nUUID \u2014 it allows multiple copies of the same SKU in one room."
+      },
+      "Placement": {
+        "properties": {
+          "position": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Position"
+          },
+          "eulerAngles": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Eulerangles"
+          },
+          "scale": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Scale",
+            "default": [
+              1.0,
+              1.0,
+              1.0
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "position",
+          "eulerAngles"
+        ],
+        "title": "Placement"
+      },
+      "PreferenceProfilePublic": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "is_template": {
+            "type": "boolean",
+            "title": "Is Template",
+            "default": false
+          },
+          "template_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Name"
+          },
+          "style_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Style Tags"
+          },
+          "color_palette": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Color Palette"
+          },
+          "material_preferences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Material Preferences"
+          },
+          "spatial_density": {
+            "type": "string",
+            "enum": [
+              "sparse",
+              "balanced",
+              "dense"
+            ],
+            "title": "Spatial Density"
+          },
+          "philosophies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Philosophies"
+          },
+          "hard_requirements": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Hard Requirements"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "style_tags",
+          "color_palette",
+          "material_preferences",
+          "spatial_density",
+          "philosophies",
+          "hard_requirements"
+        ],
+        "title": "PreferenceProfilePublic"
+      },
+      "PreferenceProfileUpsert": {
+        "properties": {
+          "style_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Style Tags"
+          },
+          "color_palette": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Color Palette"
+          },
+          "material_preferences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Material Preferences"
+          },
+          "spatial_density": {
+            "type": "string",
+            "enum": [
+              "sparse",
+              "balanced",
+              "dense"
+            ],
+            "title": "Spatial Density"
+          },
+          "philosophies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Philosophies"
+          },
+          "hard_requirements": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Hard Requirements",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "style_tags",
+          "color_palette",
+          "material_preferences",
+          "spatial_density",
+          "philosophies"
+        ],
+        "title": "PreferenceProfileUpsert"
+      },
+      "PriceInfo": {
+        "properties": {
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "currency"
+        ],
+        "title": "PriceInfo"
+      },
+      "RatingInfo": {
+        "properties": {
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "RatingInfo"
+      },
+      "Recommendation": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "suggested_position": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 3,
+                "minItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Position"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_id",
+          "name",
+          "reason"
+        ],
+        "title": "Recommendation",
+        "description": "A passive suggestion the agent surfaced for the user to consider.\n`suggested_position` is populated when the agent has a specific spot in mind."
+      },
+      "Room": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "story": {
+            "type": "integer",
+            "title": "Story",
+            "default": 0
+          },
+          "ceilingHeight": {
+            "type": "number",
+            "title": "Ceilingheight"
+          },
+          "boundingBox": {
+            "$ref": "#/components/schemas/RoomBoundingBox"
+          },
+          "floorPolygon": {
+            "items": {
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "type": "array",
+            "title": "Floorpolygon"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "ceilingHeight",
+          "boundingBox",
+          "floorPolygon"
+        ],
+        "title": "Room"
+      },
+      "RoomBoundingBox": {
+        "properties": {
+          "width": {
+            "type": "number",
+            "title": "Width"
+          },
+          "depth": {
+            "type": "number",
+            "title": "Depth"
+          }
+        },
+        "type": "object",
+        "required": [
+          "width",
+          "depth"
+        ],
+        "title": "RoomBoundingBox"
+      },
+      "RoomShell": {
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "title": "Schemaversion",
+            "default": "1.0"
+          },
+          "units": {
+            "type": "string",
+            "const": "meters",
+            "title": "Units",
+            "default": "meters"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/CaptureMetadata"
+          },
+          "room": {
+            "$ref": "#/components/schemas/Room"
+          },
+          "walls": {
+            "items": {
+              "$ref": "#/components/schemas/Wall"
+            },
+            "type": "array",
+            "title": "Walls"
+          },
+          "openings": {
+            "items": {
+              "$ref": "#/components/schemas/Opening"
+            },
+            "type": "array",
+            "title": "Openings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metadata",
+          "room"
+        ],
+        "title": "RoomShell",
+        "description": "Static room geometry from a single RoomPlan capture. Combined with\n`Design.objects`, this is the full scene the iOS client renders."
+      },
+      "ScanResponse": {
+        "properties": {
+          "scan_id": {
+            "type": "string",
+            "title": "Scan Id"
+          },
+          "room": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Room",
+            "description": "Pass-through room geometry"
+          },
+          "objects": {
+            "items": {
+              "$ref": "#/components/schemas/MatchedObject"
+            },
+            "type": "array",
+            "title": "Objects"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id",
+          "room",
+          "objects"
+        ],
+        "title": "ScanResponse"
+      },
+      "ToolCallLog": {
+        "properties": {
+          "tool": {
+            "type": "string",
+            "title": "Tool"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          },
+          "result": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Result"
+          },
+          "ms": {
+            "type": "integer",
+            "title": "Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tool",
+          "args",
+          "result",
+          "ms"
+        ],
+        "title": "ToolCallLog"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "Wall": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "center": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Center"
+          },
+          "start": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Start"
+          },
+          "end": {
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "End"
+          },
+          "width": {
+            "type": "number",
+            "title": "Width"
+          },
+          "height": {
+            "type": "number",
+            "title": "Height"
+          },
+          "rotationRadians": {
+            "type": "number",
+            "title": "Rotationradians"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "center",
+          "start",
+          "end",
+          "width",
+          "height",
+          "rotationRadians",
+          "confidence"
+        ],
+        "title": "Wall",
+        "description": "`start`/`end` are the wall's footprint endpoints on the xz plane;\n`center` is the 3D midpoint of the wall surface."
+      },
+      "app__models__design__FurnitureFiles": {
+        "properties": {
+          "usdz_url": {
+            "type": "string",
+            "title": "Usdz Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "usdz_url"
+        ],
+        "title": "FurnitureFiles"
+      },
+      "app__models__furniture__FurnitureFiles": {
+        "properties": {
+          "usdz_url": {
+            "type": "string",
+            "title": "Usdz Url"
+          },
+          "thumb_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Thumb Urls"
+          }
+        },
+        "type": "object",
+        "required": [
+          "usdz_url"
+        ],
+        "title": "FurnitureFiles"
+      }
+    }
+  }
+}

@@ -15,6 +15,35 @@ struct StyleQuizResult {
         spatialDensity: "balanced",
         philosophies: []
     )
+
+    static func fromUserDefaults(_ userDefaults: UserDefaults = .standard) -> StyleQuizResult {
+        let styleTags = userDefaults.stringArray(forKey: "pref_styleTags") ?? []
+        let colorPalette = userDefaults.stringArray(forKey: "pref_colorPalette") ?? []
+        let materialPreferences = userDefaults.stringArray(forKey: "pref_materials") ?? []
+        let spatialDensity = userDefaults.string(forKey: "pref_density") ?? "balanced"
+        let philosophies = userDefaults.stringArray(forKey: "pref_philosophies") ?? []
+
+        let result = StyleQuizResult(
+            styleTags: styleTags,
+            colorPalette: colorPalette,
+            materialPreferences: materialPreferences,
+            spatialDensity: spatialDensity,
+            philosophies: philosophies
+        )
+
+        return result.isEmpty ? .default : result
+    }
+
+    var philosophyText: String {
+        philosophies.joined(separator: ", ")
+    }
+
+    private var isEmpty: Bool {
+        styleTags.isEmpty
+            && colorPalette.isEmpty
+            && materialPreferences.isEmpty
+            && philosophies.isEmpty
+    }
 }
 
 final class StyleQuizViewModel: ObservableObject {
@@ -26,6 +55,14 @@ final class StyleQuizViewModel: ObservableObject {
     @Published var philosophy = ""
 
     let totalSteps = 5
+
+    init(initialResult: StyleQuizResult = .default) {
+        selectedStyles = Set(initialResult.styleTags)
+        selectedColors = Set(initialResult.colorPalette)
+        selectedMaterials = Set(initialResult.materialPreferences)
+        selectedDensity = initialResult.spatialDensity
+        philosophy = initialResult.philosophyText
+    }
 
     var progress: CGFloat {
         CGFloat(step + 1) / CGFloat(totalSteps)
@@ -50,16 +87,23 @@ final class StyleQuizViewModel: ObservableObject {
 
     func buildResult() -> StyleQuizResult {
         StyleQuizResult(
-            styleTags: Array(selectedStyles),
-            colorPalette: Array(selectedColors),
-            materialPreferences: Array(selectedMaterials),
+            styleTags: Array(selectedStyles).sorted(),
+            colorPalette: Array(selectedColors).sorted(),
+            materialPreferences: Array(selectedMaterials).sorted(),
             spatialDensity: selectedDensity,
-            philosophies: philosophy.isEmpty ? [] : [philosophy]
+            philosophies: parsedPhilosophies()
         )
     }
 
     private func toggle(_ item: String, in set: inout Set<String>) {
         if set.contains(item) { set.remove(item) } else { set.insert(item) }
+    }
+
+    private func parsedPhilosophies() -> [String] {
+        philosophy
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     static let allStyles = [

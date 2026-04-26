@@ -8,6 +8,8 @@
 
 import Foundation
 
+let baseURL = "https://amongst-judges-marijuana-belle.trycloudflare.com"
+
 let furnitureAssets: [String: String] = [ // key: name, value: usdz file path
     "bedframe": "bedframe",
     "table": "table",
