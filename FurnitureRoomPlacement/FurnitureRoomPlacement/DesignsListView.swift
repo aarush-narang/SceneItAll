@@ -294,13 +294,13 @@ private struct RefreshableScrollView<Content: View>: UIViewRepresentable {
 }
 
 // MARK: - Design Card
-
 private struct DesignCard: View {
     let design: DesignSummary
     let onDelete: () -> Void
     let isLoading: Bool
     let onEdit: () -> Void
     @State private var isPressed = false
+    @State private var isShowingDeleteConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -337,7 +337,9 @@ private struct DesignCard: View {
                         .foregroundStyle(.tertiary)
                     Spacer()
                     HStack(spacing: 8) {
-                        Button(action: onDelete) {
+                        Button {
+                            isShowingDeleteConfirmation = true
+                        } label: {
                             Image(systemName: "trash")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(.white)
@@ -392,6 +394,12 @@ private struct DesignCard: View {
         .scaleEffect(isPressed ? 0.97 : 1)
         .animation(.spring(response: 0.25), value: isPressed)
         .onLongPressGesture(minimumDuration: .infinity, pressing: { isPressed = $0 }, perform: { })
+        .alert("Delete Design?", isPresented: $isShowingDeleteConfirmation) {
+            Button("Delete", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will permanently delete \(design.name).")
+        }
     }
 }
 
