@@ -144,6 +144,11 @@ struct DesignsListView: View {
             } message: {
                 Text(viewModel.stylePreferencesErrorMessage)
             }
+            .alert("Couldn't Delete Design", isPresented: $viewModel.isShowingDeleteDesignError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(viewModel.deleteDesignErrorMessage)
+            }
             .overlay {
                 if viewModel.isSavingStylePreferences {
                     ZStack {
@@ -216,6 +221,9 @@ struct DesignsListView: View {
             ForEach(viewModel.filteredDesigns) { design in
                 DesignCard(
                     design: design,
+                    onDelete: {
+                        Task { await viewModel.deleteDesign(design) }
+                    },
                     isLoading: viewModel.isLoadingDesignID == design.id
                 ) {
                     Task { await viewModel.openDesignForEditing(design) }
@@ -296,6 +304,7 @@ private struct RefreshableScrollView<Content: View>: UIViewRepresentable {
 
 private struct DesignCard: View {
     let design: DesignSummary
+    let onDelete: () -> Void
     let isLoading: Bool
     let onEdit: () -> Void
     @State private var isPressed = false
@@ -334,22 +343,43 @@ private struct DesignCard: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                     Spacer()
-                    Button(action: onEdit) {
-                        Group {
-                            if isLoading {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "pencil")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.primary)
-                            }
+                    HStack(spacing: 8) {
+                        Button(action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    RadialGradient(
+                                        colors: [Color.red.opacity(0.95), Color.red.opacity(0.72)],
+                                        center: .topLeading,
+                                        startRadius: 2,
+                                        endRadius: 18
+                                    ),
+                                    in: Circle()
+                                )
+                                .shadow(color: .red.opacity(0.28), radius: 6, y: 2)
                         }
-                        .frame(width: 32, height: 32)
-                        .background(Color(.secondarySystemBackground), in: Circle())
+                        .buttonStyle(.plain)
+                        .disabled(isLoading)
+
+                        Button(action: onEdit) {
+                            Group {
+                                if isLoading {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                        .tint(.primary)
+                                } else {
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                }
+                            }
+                            .frame(width: 32, height: 32)
+                            .background(Color(.secondarySystemBackground), in: Circle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isLoading)
                 }
                 .padding(.top, 2)
                 .padding(.leading, 10)
