@@ -31,10 +31,6 @@ def chat_sessions_col():
     return get_db()["chat_sessions"]
 
 
-def match_decisions_col():
-    return get_db()["match_decisions"]
-
-
 async def check_connection() -> dict:
     try:
         await get_client().admin.command("ping")

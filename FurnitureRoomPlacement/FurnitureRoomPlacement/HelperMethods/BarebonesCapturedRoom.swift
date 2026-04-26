@@ -187,7 +187,7 @@ struct BarebonesCapturedRoom: Codable {
         openings = try container.decode([CapturedRoom.Surface].self, forKey: .openings)
         floors = try container.decode([CapturedRoom.Surface].self, forKey: .floors)
         sections = try container.decode([CapturedRoom.Section].self, forKey: .sections)
-        objects = try container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects) ?? []
+        objects = (try? container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects)) ?? []
     }
 }
 
@@ -222,7 +222,7 @@ struct LegacyBarebonesCapturedRoom: Codable {
         doors = try container.decode([CapturedRoom.Surface].self, forKey: .doors)
         windows = try container.decode([CapturedRoom.Surface].self, forKey: .windows)
         openings = try container.decode([CapturedRoom.Surface].self, forKey: .openings)
-        objects = try container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects) ?? []
+        objects = (try? container.decodeIfPresent([PlacedFurnitureObject].self, forKey: .objects)) ?? []
     }
 }
 
@@ -271,6 +271,127 @@ enum BarebonesRoomSceneBuilder {
         addCameraAndLights(to: rootNode)
 
         return scene
+    }
+
+    static func scene(for payload: SanitizedRoomPayload) -> SCNScene {
+        let scene = SCNScene()
+        scene.background.contents = UIColor(white: 0.6, alpha: 1.0)
+        let rootNode = scene.rootNode
+
+        for wall in payload.walls {
+            rootNode.addChildNode(
+                makeSanitizedSurfaceNode(
+                    id: wall.id, kind: .wall,
+                    width: wall.width, height: wall.height,
+                    center: wall.center, rotationRadians: wall.rotationRadians
+                )
+            )
+        }
+
+        for opening in payload.openings {
+            let kind: SurfaceKind
+            switch opening.type {
+            case "door": kind = .door
+            case "window": kind = .window
+            default: kind = .opening
+            }
+            rootNode.addChildNode(
+                makeSanitizedSurfaceNode(
+                    id: opening.id, kind: kind,
+                    width: opening.width, height: opening.height,
+                    center: opening.center, rotationRadians: opening.rotationRadians
+                )
+            )
+        }
+
+        if !payload.room.floorPolygon.isEmpty {
+            let floorY: Float = payload.walls.isEmpty ? 0 : payload.walls.map {
+                Float($0.center.count > 1 ? $0.center[1] : 0) - Float($0.height) / 2
+            }.min() ?? 0
+
+            rootNode.addChildNode(
+                makeSanitizedFloorNode(id: payload.room.id, polygon: payload.room.floorPolygon, floorY: floorY)
+            )
+        }
+
+        addCameraAndLights(to: rootNode)
+        return scene
+    }
+
+    private static func makeSanitizedSurfaceNode(
+        id: String,
+        kind: SurfaceKind,
+        width: Double,
+        height: Double,
+        center: [Double],
+        rotationRadians: Double
+    ) -> SCNNode {
+        let surfaceNode = SCNNode()
+        surfaceNode.name = "\(kind.nodeName)-\(id)"
+
+        let w = CGFloat(max(width, 0.01))
+        let h = CGFloat(max(height, 0.01))
+        let plane = SCNPlane(width: w, height: h)
+        plane.materials = [kind.material]
+        let geometryNode = SCNNode(geometry: plane)
+        geometryNode.position.z += surfaceDepthOffset(for: kind)
+        geometryNode.renderingOrder = renderingOrder(for: kind)
+        surfaceNode.addChildNode(geometryNode)
+
+        let halfW = Float(w) / 2
+        let halfH = Float(h) / 2
+        let outlineVertices = [
+            SCNVector3(-halfW, -halfH, 0),
+            SCNVector3(halfW, -halfH, 0),
+            SCNVector3(halfW, halfH, 0),
+            SCNVector3(-halfW, halfH, 0)
+        ]
+        if let outlineNode = makeOutlineNode(from: outlineVertices, kind: kind) {
+            surfaceNode.addChildNode(outlineNode)
+        }
+
+        surfaceNode.position = SCNVector3(
+            center.count > 0 ? Float(center[0]) : 0,
+            center.count > 1 ? Float(center[1]) : 0,
+            center.count > 2 ? Float(center[2]) : 0
+        )
+        surfaceNode.eulerAngles.y = Float(rotationRadians)
+
+        return surfaceNode
+    }
+
+    private static func makeSanitizedFloorNode(id: String, polygon: [[Double]], floorY: Float = 0) -> SCNNode {
+        let floorNode = SCNNode()
+        floorNode.name = "floor-\(id)"
+
+        let vertices = polygon.map { point -> SCNVector3 in
+            SCNVector3(
+                Float(point.count > 0 ? point[0] : 0),
+                floorY,
+                Float(point.count > 1 ? point[1] : 0)
+            )
+        }
+
+        guard vertices.count >= 3 else { return floorNode }
+
+        let source = SCNGeometrySource(vertices: vertices)
+        var indices: [UInt32] = []
+        for i in 1..<(vertices.count - 1) {
+            indices.append(0)
+            indices.append(UInt32(i))
+            indices.append(UInt32(i + 1))
+        }
+        let element = SCNGeometryElement(indices: indices, primitiveType: .triangles)
+        let geometry = SCNGeometry(sources: [source], elements: [element])
+        geometry.materials = [SurfaceKind.floor.material]
+        let geometryNode = SCNNode(geometry: geometry)
+        floorNode.addChildNode(geometryNode)
+
+        if let outlineNode = makeOutlineNode(from: vertices, kind: .floor) {
+            floorNode.addChildNode(outlineNode)
+        }
+
+        return floorNode
     }
 
     @discardableResult
@@ -702,6 +823,10 @@ enum BarebonesRoomImportLoader {
             return BarebonesRoomSceneBuilder.scene(for: room)
         }
 
+        if let payload = try? decoder.decode(SanitizedRoomPayload.self, from: data) {
+            return BarebonesRoomSceneBuilder.scene(for: payload)
+        }
+
         throw BarebonesImportError.unsupportedFile
     }
 
@@ -714,6 +839,10 @@ enum BarebonesRoomImportLoader {
 
         if let room = try? decoder.decode(LegacyBarebonesCapturedRoom.self, from: data) {
             return room.objects
+        }
+
+        if let payload = try? decoder.decode(SanitizedRoomPayload.self, from: data) {
+            return payload.objects
         }
 
         throw BarebonesImportError.unsupportedFile

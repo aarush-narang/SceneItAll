@@ -6,13 +6,10 @@ import json
 import re
 import time
 import uuid
-from datetime import datetime, timezone
-
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from PIL import Image
 
-from ..db import match_decisions_col
 from ..logging import log
 from ..models.scan import (
     DetectedObject,
@@ -24,7 +21,7 @@ from ..models.scan import (
 )
 from ..pipeline.category_refinement import refine_category
 from ..pipeline.cropping import crop_with_margin
-from ..pipeline.decision import COMMIT_THRESHOLD, decide
+from ..pipeline.decision import decide
 from ..pipeline.embedding import embed_crops_mean
 from ..pipeline.filtering import build_candidate_filter
 from ..pipeline.frame_scoring import score_frame, select_top_frames
@@ -339,8 +336,6 @@ async def _process_object_inner(
         gemini_caption=caption,
     )
 
-    await _log_decision(scan_id, obj, refined, decision, len(top))
-
     return MatchedObject(
         detected_id=obj.identifier,
         matched_product_id=decision.matched.product_id if decision.matched else None,
@@ -355,32 +350,6 @@ async def _process_object_inner(
     )
 
 
-async def _log_decision(
-    scan_id: str,
-    obj: DetectedObject,
-    refined: str,
-    decision,
-    n_frames_used: int,
-) -> None:
-    """Persist the decision (committed or rejected) for offline eval. Best-effort."""
-    try:
-        await match_decisions_col().insert_one(
-            {
-                "scan_id": scan_id,
-                "detected_id": obj.identifier,
-                "roomplan_category": obj.category,
-                "refined_category": refined,
-                "decision_reason": decision.reason,
-                "matched_product_id": decision.matched.product_id if decision.matched else None,
-                "top_score": decision.top_score,
-                "category_consistency": decision.category_consistency,
-                "n_frames_used": n_frames_used,
-                "commit_threshold": COMMIT_THRESHOLD,
-                "ts": datetime.now(timezone.utc),
-            }
-        )
-    except Exception as exc:
-        log.warning("scan.decision_log_failed", scan_id=scan_id, error=str(exc))
 
 
 # ---------- endpoint ----------
