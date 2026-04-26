@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..db import designs_col
+from ..db import designs_col, preferences_col
 from ..models.design import (
     DesignCreateRequest,
     DesignPatchRequest,
@@ -30,11 +30,13 @@ async def list_designs(user_id: str = Query(...)):
 @router.post("", response_model=DesignPublic, status_code=201)
 async def create_design(body: DesignCreateRequest):
     now = datetime.now(timezone.utc)
+    pref = await preferences_col().find_one({"user_id": body.user_id}, {"_id": 1})
+    preference_profile_id = str(pref["_id"]) if pref else None
     doc = {
         "_id": str(uuid.uuid4()),
         "user_id": body.user_id,
         "name": body.name,
-        "preference_profile_id": body.preference_profile_id,
+        "preference_profile_id": preference_profile_id,
         "shell": body.shell.model_dump(),
         "objects": [item.model_dump() for item in body.objects],
         "created_at": now,

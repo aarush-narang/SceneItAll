@@ -156,6 +156,8 @@ class DesignPublic(BaseModel):
     def from_doc(cls, doc: dict) -> "DesignPublic":
         doc = dict(doc)
         doc["id"] = doc.pop("_id", doc.get("id", ""))
+        if doc.get("preference_profile_id") is not None:
+            doc["preference_profile_id"] = str(doc["preference_profile_id"])
         return cls(**doc)
 
 
@@ -164,7 +166,6 @@ class DesignCreateRequest(BaseModel):
 
     user_id: str
     name: str
-    preference_profile_id: str | None = None
     shell: RoomShell
     objects: list[PlacedObject] = Field(default_factory=list)
 

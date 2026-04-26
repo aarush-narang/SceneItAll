@@ -22,19 +22,18 @@ async def get_preferences(user_id: str):
 async def upsert_preferences(user_id: str, body: PreferenceProfileUpsert):
     col = preferences_col()
     existing = await col.find_one({"user_id": user_id})
-
     if existing:
         await col.update_one({"_id": existing["_id"]}, {"$set": body.model_dump()})
         doc = await col.find_one({"_id": existing["_id"]})
     else:
         doc = {
+            "_id": str(uuid.uuid4()),
             "user_id": user_id,
             "is_template": False,
             "template_name": None,
             **body.model_dump(),
         }
         await col.insert_one(doc)
-
     return PreferenceProfilePublic.from_doc(doc)
 
 
