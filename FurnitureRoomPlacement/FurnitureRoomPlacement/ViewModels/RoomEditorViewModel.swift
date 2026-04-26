@@ -359,7 +359,7 @@ final class RoomEditorViewModel: ObservableObject {
     private func removeExistingOverlayNodes() {
         scene.rootNode
             .childNodes(passingTest: { node, _ in
-                node.name?.hasPrefix("external-usdz-overlay-") == true
+                node.name?.hasPrefix(BarebonesRoomSceneBuilder.overlayNodeNamePrefix) == true
             })
             .forEach { $0.removeFromParentNode() }
     }

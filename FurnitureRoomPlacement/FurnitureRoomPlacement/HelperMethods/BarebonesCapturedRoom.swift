@@ -16,6 +16,7 @@ Supporting barebones room models, import/export helpers, and SceneKit builders.
 import Foundation
 import RoomPlan
 import SceneKit
+import simd
 import UIKit
 
 struct SavedFurnitureSnapshot: Codable {
@@ -621,8 +622,10 @@ enum BarebonesRoomSceneBuilder {
         return SCNVector3(base.x, base.y + halfHeight, base.z)
     }
 
+    static let overlayNodeNamePrefix = "external-usdz-overlay-"
+
     static func overlayNodeName(for identifier: String) -> String {
-        "external-usdz-overlay-\(identifier)"
+        "\(overlayNodeNamePrefix)\(identifier)"
     }
 
     private static func loadExternalUSDZNode(named assetName: String) -> SCNNode? {
@@ -707,41 +710,158 @@ enum BarebonesRoomSceneBuilder {
     private static func normalizedImportedNode(from node: SCNNode) -> NormalizedImport {
         let containerNode = SCNNode()
         let modelNode = node.clone()
+
+        // Apply IKEA Z-up → SceneKit Y-up correction first; the AABB used for
+        // pivot alignment must reflect the rotated geometry, not the source one.
         modelNode.eulerAngles.x += RemoteUSDZModelOrientation.previewAlignedCorrection.x
         modelNode.eulerAngles.y += RemoteUSDZModelOrientation.previewAlignedCorrection.y
         modelNode.eulerAngles.z += RemoteUSDZModelOrientation.previewAlignedCorrection.z
-        containerNode.addChildNode(modelNode)
 
-        var (minimumBounds, maximumBounds) = containerNode.boundingBox
-        let largestDimension = max(
-            maximumBounds.x - minimumBounds.x,
-            maximumBounds.y - minimumBounds.y,
-            maximumBounds.z - minimumBounds.z
-        )
-
-        if largestDimension > 5 {
-            let scale = 1 / largestDimension
-            modelNode.scale = SCNVector3(scale, scale, scale)
-        } else if largestDimension > 0, largestDimension < 0.05 {
-            let scale = 0.5 / largestDimension
-            modelNode.scale = SCNVector3(scale, scale, scale)
+        // The imported USDZ container has no geometry of its own — every mesh
+        // lives in a descendant. `SCNNode.boundingBox` only reports the node's
+        // *own* geometry box (returning (0,0,0)..(0,0,0) for our container),
+        // so we must combine descendant boxes manually.
+        guard let (geomMin, geomMax) = combinedDescendantBoundingBox(of: node) else {
+            containerNode.addChildNode(modelNode)
+            return NormalizedImport(node: containerNode, halfHeight: 0)
         }
 
-        (minimumBounds, maximumBounds) = containerNode.boundingBox
-        let centerX = (minimumBounds.x + maximumBounds.x) / 2
-        let centerZ = (minimumBounds.z + maximumBounds.z) / 2
-        modelNode.position.x -= centerX
-        modelNode.position.y -= minimumBounds.y
-        modelNode.position.z -= centerZ
+        // Transform the 8 AABB corners through modelNode's rotation to get
+        // the rotated AABB. Only the X correction is non-zero, so we build
+        // that single rotation matrix and apply it.
+        let rotation = simd_float4x4(SCNMatrix4MakeRotation(modelNode.eulerAngles.x, 1, 0, 0))
+        var rotatedMin = SCNVector3(Float.infinity, Float.infinity, Float.infinity)
+        var rotatedMax = SCNVector3(-Float.infinity, -Float.infinity, -Float.infinity)
+        for cx in [geomMin.x, geomMax.x] {
+            for cy in [geomMin.y, geomMax.y] {
+                for cz in [geomMin.z, geomMax.z] {
+                    let r = rotation * simd_float4(cx, cy, cz, 1)
+                    rotatedMin.x = min(rotatedMin.x, r.x); rotatedMax.x = max(rotatedMax.x, r.x)
+                    rotatedMin.y = min(rotatedMin.y, r.y); rotatedMax.y = max(rotatedMax.y, r.y)
+                    rotatedMin.z = min(rotatedMin.z, r.z); rotatedMax.z = max(rotatedMax.z, r.z)
+                }
+            }
+        }
 
-        return containerNode
+        // Sanity-clamp absurdly large or tiny imports (rare for IKEA, kept as a guard).
+        let largestDimension = max(
+            rotatedMax.x - rotatedMin.x,
+            rotatedMax.y - rotatedMin.y,
+            rotatedMax.z - rotatedMin.z
+        )
+        let scaleFactor: Float
+        if largestDimension > 5 {
+            scaleFactor = 1 / largestDimension
+        } else if largestDimension > 0, largestDimension < 0.05 {
+            scaleFactor = 0.5 / largestDimension
+        } else {
+            scaleFactor = 1
+        }
+        if scaleFactor != 1 {
+            modelNode.scale = SCNVector3(scaleFactor, scaleFactor, scaleFactor)
+        }
+
+        // Pivot the model at its rotated, scaled geometric center so the
+        // container's origin matches the placement convention used by the
+        // server (`position.y = detected_floor + item_height / 2`).
+        let centerX = (rotatedMin.x + rotatedMax.x) / 2 * scaleFactor
+        let centerY = (rotatedMin.y + rotatedMax.y) / 2 * scaleFactor
+        let centerZ = (rotatedMin.z + rotatedMax.z) / 2 * scaleFactor
+        modelNode.position.x = -centerX
+        modelNode.position.y = -centerY
+        modelNode.position.z = -centerZ
+
+        containerNode.addChildNode(modelNode)
+
+        let halfHeight = (rotatedMax.y - rotatedMin.y) * scaleFactor / 2
+        return NormalizedImport(node: containerNode, halfHeight: halfHeight)
     }
 
+    /// Walks `node`'s hierarchy and returns the smallest AABB that contains
+    /// every descendant geometry, expressed in `node`'s local frame. The
+    /// optional `include` predicate prunes whole subtrees: returning `false`
+    /// for a node skips it and all of its descendants. Returns nil if no
+    /// geometry passes the filter.
+    private static func combinedDescendantBoundingBox(
+        of node: SCNNode,
+        where include: (SCNNode) -> Bool = { _ in true }
+    ) -> (min: SCNVector3, max: SCNVector3)? {
+        var lo = SCNVector3(Float.infinity, Float.infinity, Float.infinity)
+        var hi = SCNVector3(-Float.infinity, -Float.infinity, -Float.infinity)
+        var found = false
+
+        func walk(_ n: SCNNode, transformFromN: simd_float4x4) {
+            guard include(n) else { return }
+            if n.geometry != nil {
+                let (gMin, gMax) = n.boundingBox
+                for cx in [gMin.x, gMax.x] {
+                    for cy in [gMin.y, gMax.y] {
+                        for cz in [gMin.z, gMax.z] {
+                            let t = transformFromN * simd_float4(cx, cy, cz, 1)
+                            lo.x = min(lo.x, t.x); hi.x = max(hi.x, t.x)
+                            lo.y = min(lo.y, t.y); hi.y = max(hi.y, t.y)
+                            lo.z = min(lo.z, t.z); hi.z = max(hi.z, t.z)
+                        }
+                    }
+                }
+                found = true
+            }
+            for child in n.childNodes {
+                walk(child, transformFromN: transformFromN * child.simdTransform)
+            }
+        }
+
+        walk(node, transformFromN: matrix_identity_float4x4)
+        return found ? (lo, hi) : nil
+    }
+
+    /// Initial drop position for a manually-placed item. Returns the room-shell
+    /// XZ center at the floor's world Y. `SCNNode.boundingBox` returns
+    /// origin-only for nodes without their own geometry (see the comment in
+    /// `normalizedImportedNode`), so we walk descendants ourselves and prefer
+    /// an explicit `floor-*` node lookup for Y when one is available.
     private static func placementPosition(in rootNode: SCNNode) -> SCNVector3 {
-        let (minimumBounds, maximumBounds) = rootNode.boundingBox
-        let centerX = (minimumBounds.x + maximumBounds.x) / 2
-        let centerZ = (minimumBounds.z + maximumBounds.z) / 2
-        return SCNVector3(centerX, minimumBounds.y, centerZ)
+        let shellBox = combinedDescendantBoundingBox(of: rootNode) { node in
+            node.name?.hasPrefix(overlayNodeNamePrefix) != true
+        }
+        let centerX: Float = shellBox.map { ($0.min.x + $0.max.x) / 2 } ?? 0
+        let centerZ: Float = shellBox.map { ($0.min.z + $0.max.z) / 2 } ?? 0
+
+        // Floor lookup is the most reliable signal. Fall back to the lowest
+        // point in the room shell — in well-formed rooms walls bottom out at
+        // the floor, so the two values agree.
+        let floor = floorY(in: rootNode) ?? shellBox?.min.y ?? 0
+
+        return SCNVector3(centerX, floor, centerZ)
+    }
+
+    /// World Y of the floor's geometry in `rootNode`'s frame, by walking child
+    /// nodes named `floor-*`. Returns nil if no floor nodes are present.
+    private static func floorY(in rootNode: SCNNode) -> Float? {
+        let floorNodes = rootNode.childNodes.filter {
+            $0.name?.hasPrefix("floor-") == true
+        }
+        guard !floorNodes.isEmpty else { return nil }
+
+        var lowest = Float.infinity
+        for floorNode in floorNodes {
+            guard let (localMin, localMax) = combinedDescendantBoundingBox(of: floorNode) else { continue }
+            // localMin/localMax are in floorNode's local frame. Apply the
+            // floor's own transform so the result lands in rootNode's frame —
+            // sanitized scenes encode floor Y in `floorNode.position.y`, while
+            // CapturedRoom scenes pack a full RoomPlan transform with rotation.
+            let t = floorNode.simdTransform
+            for cx in [localMin.x, localMax.x] {
+                for cy in [localMin.y, localMax.y] {
+                    for cz in [localMin.z, localMax.z] {
+                        let p = t * simd_float4(cx, cy, cz, 1)
+                        lowest = min(lowest, p.y)
+                    }
+                }
+            }
+        }
+
+        return lowest.isFinite ? lowest : nil
     }
 
     private static func applyRenderingOrder(_ renderingOrder: Int, to node: SCNNode) {
