@@ -131,6 +131,11 @@ struct DesignsListView: View {
             } message: {
                 Text(viewModel.stylePreferencesErrorMessage)
             }
+            .alert("Couldn't Delete Design", isPresented: $viewModel.isShowingDeleteDesignError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(viewModel.deleteDesignErrorMessage)
+            }
             .overlay {
                 if viewModel.isSavingStylePreferences {
                     ZStack {
@@ -201,7 +206,11 @@ struct DesignsListView: View {
             spacing: 12
         ) {
             ForEach(viewModel.filteredDesigns) { design in
-                DesignCard(design: design)
+                DesignCard(design: design) {
+                    Task {
+                        await viewModel.deleteDesign(design)
+                    }
+                }
             }
         }
         .padding(16)
@@ -278,6 +287,7 @@ private struct RefreshableScrollView<Content: View>: UIViewRepresentable {
 
 private struct DesignCard: View {
     let design: DesignSummary
+    let onDelete: () -> Void
     @State private var isPressed = false
 
     var body: some View {
@@ -314,11 +324,31 @@ private struct DesignCard: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
                     Spacer()
-                    Image(systemName: "pencil")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 32, height: 32)
-                        .background(Color(.secondarySystemBackground), in: Circle())
+                    HStack(spacing: 8) {
+                        Button(action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    RadialGradient(
+                                        colors: [Color.red.opacity(0.95), Color.red.opacity(0.72)],
+                                        center: .topLeading,
+                                        startRadius: 2,
+                                        endRadius: 18
+                                    ),
+                                    in: Circle()
+                                )
+                                .shadow(color: .red.opacity(0.28), radius: 6, y: 2)
+                        }
+                        .buttonStyle(.plain)
+
+                        Image(systemName: "pencil")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 32, height: 32)
+                            .background(Color(.secondarySystemBackground), in: Circle())
+                    }
                 }
                 .padding(.top, 2)
                 .padding(.leading, 10)

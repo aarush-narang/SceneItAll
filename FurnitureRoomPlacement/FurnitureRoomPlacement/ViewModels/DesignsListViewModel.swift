@@ -38,6 +38,8 @@ final class DesignsListViewModel: ObservableObject {
     @Published var isSavingStylePreferences = false
     @Published var stylePreferencesErrorMessage = ""
     @Published var isShowingStylePreferencesError = false
+    @Published var deleteDesignErrorMessage = ""
+    @Published var isShowingDeleteDesignError = false
 
     private var hasLoadedDesigns = false
 
@@ -112,6 +114,24 @@ final class DesignsListViewModel: ObservableObject {
             isSavingStylePreferences = false
             stylePreferencesErrorMessage = error.localizedDescription
             isShowingStylePreferencesError = true
+        }
+    }
+
+    @MainActor
+    func deleteDesign(_ design: DesignSummary) async {
+        isShowingDeleteDesignError = false
+        deleteDesignErrorMessage = ""
+
+        do {
+            try await FurnitureAPIClient.shared.deleteDesign(id: design.id)
+            designs.removeAll { $0.id == design.id }
+        } catch {
+            if error.isCancellationError {
+                return
+            }
+
+            deleteDesignErrorMessage = error.localizedDescription
+            isShowingDeleteDesignError = true
         }
     }
 
