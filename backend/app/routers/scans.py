@@ -259,8 +259,27 @@ async def _process_object_inner(
 ) -> MatchedObject:
     world_corners = bbox_corners_world(obj.transform, obj.dimensions)
 
+    # When the iOS client captured a targeted burst for this object, use only
+    # those frames — they were snapped right as RoomPlan detected the object
+    # so they're almost guaranteed to have a good frontal view. Fall back to
+    # the full frame list when no burst data is present.
+    if obj.object_frame_ids:
+        object_frame_id_set = set(obj.object_frame_ids)
+        candidate_frames = [fm for fm in frames if fm.frame_id in object_frame_id_set]
+        if not candidate_frames:
+            # All burst frame IDs are missing from the upload — fall back gracefully.
+            log.warning(
+                "scan.burst_frames_missing",
+                scan_id=scan_id,
+                detected_id=obj.identifier,
+                expected_ids=obj.object_frame_ids,
+            )
+            candidate_frames = frames
+    else:
+        candidate_frames = frames
+
     scored = []
-    for fm in frames:
+    for fm in candidate_frames:
         image = images.get(fm.frame_id)
         if image is None:
             continue
@@ -333,6 +352,8 @@ async def _process_object_inner(
         top_combined=round(decision.top_score, 3),
         category_consistency=round(decision.category_consistency, 3),
         n_frames_used=len(top),
+        used_burst_frames=bool(obj.object_frame_ids),
+        n_burst_frames=len(obj.object_frame_ids),
         n_candidates=len(candidates),
         had_visual=query_vec is not None,
         had_text=text_query_vec is not None,
