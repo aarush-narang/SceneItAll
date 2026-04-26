@@ -44,7 +44,7 @@ struct ImportedRoomAssistantOverlay: View {
 
                 HStack(spacing: 12) {
                     assistantButton
-                    cleanupButton
+//                    cleanupButton
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
