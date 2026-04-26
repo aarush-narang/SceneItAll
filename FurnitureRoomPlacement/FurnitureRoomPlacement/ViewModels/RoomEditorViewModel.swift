@@ -106,7 +106,7 @@ final class RoomEditorViewModel: ObservableObject {
     func saveRoomJSON() {
         do {
             let updatedObjects = placedObjects.map { currentPlacement(for: $0) }
-            let updatedData = try RoomJSONSanitizer.sanitizedJSONData(from: baseRoomData, appending: updatedObjects)
+            let updatedData = try BarebonesRoomJSONSanitizer.roomData(byUpdatingObjects: updatedObjects, in: baseRoomData)
             exportDocument = JSONExportDocument(data: updatedData)
             isShowingSaveExporter = true
         } catch {
