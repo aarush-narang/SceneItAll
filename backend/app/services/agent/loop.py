@@ -35,7 +35,7 @@ from .registry import dispatch, function_declarations
 
 
 _MODEL_ID = "gemini-3.1-pro-preview-customtools"
-_MAX_TOOL_ROUND_TRIPS = 8
+_MAX_TOOL_ROUND_TRIPS = 20
 
 
 def _coerce_placed(doc: dict[str, Any]) -> PlacedObject | None:

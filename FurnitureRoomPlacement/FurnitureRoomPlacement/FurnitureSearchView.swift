@@ -4,13 +4,34 @@ struct FurnitureSearchView: View {
     let onFurnitureSelected: (Furniture) -> Void
     let onError: (String) -> Void
 
+    private struct ColorShortcut: Identifiable {
+        let name: String
+        let swatch: Color
+
+        var id: String { name }
+    }
+
     @State private var query = ""
+    @State private var maxPriceText = ""
     @State private var limitText = "10"
     @State private var results: [Furniture] = []
     @State private var isLoading = false
     @State private var selectedCategory = "All"
+    @State private var selectedColorName: String?
 
     private let categories = ["All", "Seating", "Tables", "Storage", "Lighting", "Decor"]
+    private let colorShortcuts: [ColorShortcut] = [
+        ColorShortcut(name: "Black", swatch: .black),
+        ColorShortcut(name: "White", swatch: .white),
+        ColorShortcut(name: "Gray", swatch: .gray),
+        ColorShortcut(name: "Brown", swatch: .brown),
+        ColorShortcut(name: "Beige", swatch: Color(red: 0.87, green: 0.80, blue: 0.68)),
+        ColorShortcut(name: "Red", swatch: .red),
+        ColorShortcut(name: "Orange", swatch: .orange),
+        ColorShortcut(name: "Yellow", swatch: .yellow),
+        ColorShortcut(name: "Blue", swatch: .blue),
+        ColorShortcut(name: "Green", swatch: .green)
+    ]
 
     var body: some View {
         ZStack {
@@ -33,19 +54,60 @@ struct FurnitureSearchView: View {
     private var searchHeader: some View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.tertiary)
 
-                TextField("Search furniture...", text: $query)
+                    TextField("Search furniture...", text: $query)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 15))
+                        .submitLabel(.search)
+                        .onSubmit { Task { await search() } }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+
+                TextField("Max $", text: $maxPriceText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
-                    .submitLabel(.search)
-                    .onSubmit { Task { await search() } }
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(width: 92)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    .onChange(of: maxPriceText) { _, newValue in
+                        maxPriceText = newValue.filter(\.isNumber)
+                    }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+
+            HStack(spacing: 0) {
+                ForEach(colorShortcuts) { color in
+                    Button {
+                        selectedColorName = selectedColorName == color.name ? nil : color.name
+                        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Task { await search() }
+                        }
+                    } label: {
+                        Circle()
+                            .fill(color.swatch)
+                            .frame(width: 24, height: 24)
+                            .overlay {
+                                Circle()
+                                    .strokeBorder(
+                                        selectedColorName == color.name ? Color.accentColor : Color.secondary.opacity(color.name == "White" ? 0.55 : 0.2),
+                                        lineWidth: selectedColorName == color.name ? 3 : 1
+                                    )
+                            }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(color.name) furniture")
+                }
+            }
+            .padding(.vertical, 2)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -107,10 +169,19 @@ struct FurnitureSearchView: View {
         defer { isLoading = false }
 
         do {
-            let searchQuery = selectedCategory == "All"
+            let colorQueryPrefix = selectedColorName?.lowercased() ?? ""
+            let baseQuery = selectedCategory == "All"
                 ? trimmedQuery
                 : "\(selectedCategory.lowercased()) \(trimmedQuery)"
-            results = try await FurnitureAPIClient.shared.searchFurniture(query: searchQuery, limit: limit)
+            let searchQuery = [colorQueryPrefix, baseQuery]
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            let fetchedResults = try await FurnitureAPIClient.shared.searchFurniture(query: searchQuery, limit: limit)
+            if let maxPrice = Double(maxPriceText), maxPrice > 0 {
+                results = fetchedResults.filter { $0.price.value <= maxPrice }
+            } else {
+                results = fetchedResults
+            }
         } catch {
             results = []
             onError(error.localizedDescription)
