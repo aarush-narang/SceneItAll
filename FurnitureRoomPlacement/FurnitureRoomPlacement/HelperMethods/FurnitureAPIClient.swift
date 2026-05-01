@@ -24,7 +24,7 @@ final class FurnitureAPIClient {
         let config = URLSessionConfiguration.default
         // Multi-tool agent turns (e.g. "add a bed and a nightstand") run several
         // Gemini round-trips and can exceed the 60s default. Give them headroom.
-        config.timeoutIntervalForRequest = 300
+        config.timeoutIntervalForRequest = 600
         config.timeoutIntervalForResource = 600
         return URLSession(configuration: config)
     }

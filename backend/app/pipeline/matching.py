@@ -106,7 +106,7 @@ async def _vector_search(
                 "index": VISUAL_INDEX_NAME,
                 "path": path,
                 "queryVector": query_vec.tolist(),
-                "numCandidates": max(top_k * 100, 1000),
+                "numCandidates": max(top_k * 50, 500),
                 "limit": max(top_k * 10, 200),
             }
         },
